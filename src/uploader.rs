@@ -247,6 +247,10 @@ impl ExloliUploader {
             {
                 Ok(album_id) => {
                     info!("专辑创建成功，专辑 ID: {}", album_id);
+                    let album_link = format!("https://catbox.moe/c/{}", album_id);
+            
+                    // 生成消息正文，并传入专辑链接
+                    let message = self.create_message_text(gallery, article, Some(album_link)).await?;
                 }
                 Err(err) => {
                     eprintln!("专辑创建失败: {}", err);
@@ -284,6 +288,7 @@ impl ExloliUploader {
         &self,
         gallery: &T,
         article: &str,
+        album_link: Option<String>,
     ) -> Result<String> {
         // 首先，将 tag 翻译
         let re = Regex::new("[-/· ]").unwrap();
@@ -303,9 +308,12 @@ impl ExloliUploader {
             article
         ));
         text.push_str(&format!(
-            "<b>〔 <a href=\"{}\">来 源</a> 〕</b>",
+            "<b>〔 <a href=\"{}\">来 源</a> 〕</b>/",
             gallery.url().url()
         ));
+        if let Some(link) = album_link {
+            text.push_str(&format!("\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>", link));
+        }
         Ok(text)
     }
 }
