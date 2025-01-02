@@ -229,7 +229,7 @@ impl ExloliUploader {
                     let file_short = file_url
                         .split('/')
                         .last()
-                        .unwrap_or(&file_name); // 如果没有短链接，使用 file_name 作为默认值
+                        .unwrap_or(""); // 获取短链接部分，如：4b71m5.webp
                     uploaded_files.push(file_short.to_string());
                 }
                 Err(err) => {
@@ -253,11 +253,6 @@ impl ExloliUploader {
             {
                 Ok(album_id) => {
                     info!("专辑创建成功，专辑 ID: {}", album_id);
-
-                    // 创建消息文本
-                    let album_url = format!("https://catbox.moe/c/+{}", album_id);
-                    let text = self.create_message_text(gallery, "Some article", Some(&album_url)).await?;
-                    // 发送消息或者其他操作
                 }
                 Err(err) => {
                     eprintln!("专辑创建失败: {}", err);
@@ -268,36 +263,7 @@ impl ExloliUploader {
         Ok(())
     }
 
-        // 如果有上传的文件，则创建专辑
-        if !uploaded_files.is_empty() {
-            let album_title = gallery.title_jp(); // 优先使用日文标题
-            let album_desc = self.config.telegraph.author_name.clone(); // 描述为作者名
 
-            match catbox
-                .create_album(
-                    &album_title,
-                    &album_desc,
-                    &uploaded_files.iter().map(String::as_str).collect::<Vec<_>>(),
-                )
-                .await
-            {
-                Ok(album_id) => {
-                    info!("专辑创建成功，专辑 ID: {}", album_id);
-
-                    // 创建消息文本
-                    let album_url = format!("https://catbox.moe/c/+{}", album_id);
-                    let text = self.create_message_text(gallery, "Some article", Some(&album_url)).await?;
-                    // 发送消息或者其他操作
-                }
-                Err(err) => {
-                    eprintln!("专辑创建失败: {}", err);
-                }
-            }
-        }
-
-        Ok(())
-    }
-    
     // 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
     async fn publish_telegraph_article<T: GalleryInfo>(
         &self,
@@ -320,18 +286,17 @@ impl ExloliUploader {
         Ok(self.telegraph.create_page(&title, &node, false).await?)
     }
 
-   // 为画廊生成一条可供发送的 telegram 消息正文
+    /// 为画廊生成一条可供发送的 telegram 消息正文
     async fn create_message_text<T: GalleryInfo>(
         &self,
         gallery: &T,
         article: &str,
-        album_url: Option<&str>, // 这里是 Option<&str>
     ) -> Result<String> {
         // 首先，将 tag 翻译
         let re = Regex::new("[-/· ]").unwrap();
         let tags = self.trans.trans_tags(gallery.tags());
         let mut text = String::new();
-        text.push_str(&format!("<b>{}</b>\n\n", gallery.title_jp()));
+        text.push_str(&format!("<b>{}</b>\n\n",gallery.title_jp()));
         for (ns, tag) in tags {
             let tag = tag
                 .iter()
@@ -340,14 +305,10 @@ impl ExloliUploader {
                 .join(" ");
             text.push_str(&format!("⁣⁣⁣⁣　<code>{}</code>: <i>{}</i>\n", ns, tag))
         }
-        // 生成并插入专辑链接
-        if let Some(url) = album_url {
-            text.push_str(&format!(
-                "\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>/",
-                url
-            ));
-        }
-
+        text.push_str(&format!(
+            "\n<b>〔 <a href=\"{}\">即 時 預 覽</a> 〕</b>/",
+            article
+        ));
         text.push_str(&format!(
             "<b>〔 <a href=\"{}\">来 源</a> 〕</b>",
             gallery.url().url()
