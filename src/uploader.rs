@@ -195,16 +195,17 @@ impl ExloliUploader {
             }
         }
         info!("需要上传的图片数: {}", pages.len());
-    
+
         let client = self.ehentai.clone();
         let catbox = CatboxUploader::new(
             &self.config.catbox.api_url,
             &self.config.catbox.userhash,
         );
-    
+
         // 上传的文件 URL 列表
         let mut uploaded_files = vec![];
-    
+        let mut album_url = String::new(); // 提前定义 album_url
+
         // 上传图片
         for page in pages {
             let rst = client.get_image_url(&page).await?;
@@ -212,33 +213,31 @@ impl ExloliUploader {
             if suffix == "gif" {
                 continue; // 忽略 GIF 图片
             }
-    
+
             let file_name = format!("{}.{}", page.hash(), suffix);
             let file_bytes = reqwest::get(&rst.1).await?.bytes().await?.to_vec();
             debug!("已下载: {}", page.page());
-    
+
             // 调用 CatboxUploader 上传文件
             match catbox.upload_file(&file_name, &file_bytes).await {
                 Ok(file_url) => {
                     debug!("已上传: {}", page.page());
-                    // 记录到数据库
                     ImageEntity::create(rst.0, page.hash(), &file_url).await?;
                     PageEntity::create(page.gallery_id(), page.page(), rst.0).await?;
-                    uploaded_files.push(file_url); // 收集上传成功的文件 URL
+                    uploaded_files.push(file_url);
                 }
                 Err(err) => {
                     eprintln!("上传失败: {}", err);
                 }
             }
         }
-    
+
         // 如果有上传的文件，则创建专辑
         if !uploaded_files.is_empty() {
-            let album_title = gallery.title_jp(); // 优先使用日文标题
-            let album_desc = self.config.telegraph.author_name.clone(); // 描述为作者名
-    
-            // 专辑链接
-            let album_url = match catbox
+            let album_title = gallery.title_jp();
+            let album_desc = self.config.telegraph.author_name.clone();
+
+            album_url = match catbox
                 .create_album(
                     &album_title,
                     &album_desc,
@@ -249,24 +248,22 @@ impl ExloliUploader {
                 Ok(album_id) => {
                     let url = format!("https://catbox.moe/c/{}", album_id);
                     info!("专辑创建成功: {}", url);
-                    url // 返回生成的专辑链接
+                    url
                 }
                 Err(err) => {
                     eprintln!("专辑创建失败: {}", err);
                     return Err(anyhow::anyhow!("专辑创建失败"));
                 }
             };
-    
-            // 调用 publish_telegraph_article
-            let article = self
-                .publish_telegraph_article(gallery, &album_url)
-                .await?;
-    
         }
-    
+
+        // 调用 publish_telegraph_article
+        let article = self
+            .publish_telegraph_article(gallery, &album_url)
+            .await?;
+
         Ok(())
     }
-
 
     // 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
     async fn publish_telegraph_article<T: GalleryInfo>(
