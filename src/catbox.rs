@@ -76,6 +76,14 @@ impl CatboxUploader {
         description: &str,
         files: &[&str], // 文件链接数组，直接使用完整链接
     ) -> Result<String> {
+        let validated_files: Vec<String> = files
+            .iter()
+            .map(|file| {
+                file.strip_prefix("https://files.catbox.moe/")
+                    .map(|s| format!("https://files.catbox.moe/{}", s))
+                    .unwrap_or_else(|| file.to_string())
+            })
+            .collect();
         let file_list = files.join(" "); // 拼接文件列表，用空格分隔
         let form = Form::new()
             .text("reqtype", "createalbum")
