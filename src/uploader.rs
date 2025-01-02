@@ -261,9 +261,16 @@ impl ExloliUploader {
                 }
             }
         }
+
+        // 获取文章链接
+        let article = self.publish_telegraph_article(&gallery).await?.url;
+
+        // 生成消息正文
         let message_text = self
-            .create_message_text(&gallery, article, album_url.as_deref())
+            .create_message_text(gallery, &article, album_url.as_deref())
             .await?;
+
+        Ok(())
     }
 
 
@@ -351,29 +358,6 @@ impl ExloliUploader {
                     time::sleep(Duration::from_secs(60)).await;
                 }
             }
-        }
-        Ok(())
-    }
-
-    /// 重新检测已上传过的画廊预览是否有效，并重新上传
-    pub async fn recheck(&self, mut galleries: Vec<GalleryEntity>) -> Result<()> {
-        if galleries.is_empty() {
-            galleries = GalleryEntity::list_scans().await?;
-        }
-        for gallery in galleries.iter().rev() {
-            let telegraph =
-                TelegraphEntity::get(gallery.id).await?.ok_or(anyhow!("找不到 telegraph"))?;
-            if let Some(msg) = MessageEntity::get_by_gallery(gallery.id).await? {
-                info!("检测画廊：{}", gallery.url());
-                if !self.check_telegraph(&telegraph.url).await? {
-                    info!("重新上传预览：{}", gallery.url());
-                    if let Err(err) = self.republish(gallery, &msg).await {
-                        error!("上传失败：{}", err);
-                    }
-                    time::sleep(Duration::from_secs(60)).await;
-                }
-            }
-            time::sleep(Duration::from_secs(1)).await;
         }
         Ok(())
     }
