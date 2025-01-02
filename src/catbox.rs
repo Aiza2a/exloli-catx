@@ -47,22 +47,26 @@ impl CatboxUploader {
                 let text = response.text().await.context("Failed to read response body")?;
 
                 if status.is_success() {
-                    println!("Response from Catbox: {}", text);
+                println!("Response from Catbox: {}", text);
+                if text.starts_with("https://files.catbox.moe/") {
                     Ok(text) // 返回完整的 URL
                 } else {
                     Err(anyhow::anyhow!(format!(
-                        "上传失败: 状态码: {}, 响应内容: {}",
-                        status,
+                        "响应中返回的不是有效 URL，响应内容: {}",
                         text
                     )))
                 }
-            }
-            Err(err) => {
-                eprintln!("请求失败: {:?}", err);
-                Err(anyhow::anyhow!("Failed to send request to Catbox API"))
+            } else {
+                Err(anyhow::anyhow!(format!(
+                    "上传失败: 状态码: {}, 响应内容: {}",
+                    status,
+                    text
+                )))
             }
         }
+        Err(err) => Err(anyhow::anyhow!("Failed to send request to Catbox API: {:?}", err)),
     }
+
 
     // 创建专辑
     pub async fn create_album(
