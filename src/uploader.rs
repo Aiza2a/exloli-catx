@@ -181,6 +181,7 @@ impl ExloliUploader {
         Ok(Client::new().head(url).send().await?.status() != StatusCode::NOT_FOUND)
     }
 }
+
 impl ExloliUploader {
     async fn upload_gallery_image(&self, gallery: &EhGallery) -> Result<()> {
         // 收集需要上传的图片
@@ -203,7 +204,6 @@ impl ExloliUploader {
 
         // 上传的文件 URL 列表
         let mut uploaded_files = vec![];
-        let mut album_url = String::new(); // 提前定义 album_url
 
         // 上传图片
         for page in pages {
@@ -221,9 +221,10 @@ impl ExloliUploader {
             match catbox.upload_file(&file_name, &file_bytes).await {
                 Ok(file_url) => {
                     debug!("已上传: {}", page.page());
+                    // 记录到数据库
                     ImageEntity::create(rst.0, page.hash(), &file_url).await?;
                     PageEntity::create(page.gallery_id(), page.page(), rst.0).await?;
-                    uploaded_files.push(file_url);
+                    uploaded_files.push(file_url); // 收集上传成功的文件 URL
                 }
                 Err(err) => {
                     eprintln!("上传失败: {}", err);
@@ -236,7 +237,7 @@ impl ExloliUploader {
             let album_title = gallery.title_jp(); // 优先使用日文标题
             let album_desc = self.config.telegraph.author_name.clone(); // 描述为作者名
 
-            album_url = match catbox
+            match catbox
                 .create_album(
                     &album_title,
                     &album_desc,
@@ -245,21 +246,20 @@ impl ExloliUploader {
                 .await
             {
                 Ok(album_id) => {
-                    let url = format!("https://catbox.moe/c/{}", album_id);
-                    info!("专辑创建成功: {}", url);
-                    url // 返回生成的专辑链接
+                    let album_url = format!("https://catbox.moe/c/{}", album_id);
+                    info!("专辑创建成功: {}", album_url);
+
+                    // 生成文章并获取 article URL
+                    let article_url = self.publish_telegraph_article(gallery, &album_url).await?.url;
+
+                    // 传递 album_url 和 article_url 给 create_message_text
+                    let message_text = self.create_message_text(gallery, &album_url, &article_url).await?;
                 }
                 Err(err) => {
                     eprintln!("专辑创建失败: {}", err);
-                    return Err(anyhow::anyhow!("专辑创建失败"));
                 }
-            };
+            }
         }
-
-        // 调用 publish_telegraph_article
-        let article = self
-            .publish_telegraph_article(gallery, &album_url)
-            .await?;
 
         Ok(())
     }
@@ -279,21 +279,21 @@ impl ExloliUploader {
         for img in images {
             html.push_str(&format!(r#"<img src="{}">"#, img.url()));
         }
-        html.push_str(&format!(
-            r#"<p><a href="{}">完整专辑链接</a></p>"#,
-            album_url
-        ));
+        html.push_str(&format!("<p>ᴘᴀɢᴇꜱ : {}</p>", gallery.pages()));
 
         let node = html_to_node(&html);
         // 文章标题优先使用日文
         let title = gallery.title_jp();
-        Ok(self.telegraph.create_page(&title, &node, false).await?)
+        let page = self.telegraph.create_page(&title, &node, false).await?;
+        
+        Ok(page)
     }
 
     /// 为画廊生成一条可供发送的 telegram 消息正文
     async fn create_message_text<T: GalleryInfo>(
         &self,
         gallery: &T,
+        album_url: &str, 
         article: &str,
     ) -> Result<String> {
         // 首先，将 tag 翻译
@@ -324,7 +324,6 @@ impl ExloliUploader {
         Ok(text)
     }
 }
-
 
 async fn flatten<T>(handle: JoinHandle<Result<T>>) -> Result<T> {
     match handle.await {
