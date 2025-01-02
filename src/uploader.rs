@@ -274,7 +274,6 @@ impl ExloliUploader {
 
         Ok(())
     }
-}
 
 
     // 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
