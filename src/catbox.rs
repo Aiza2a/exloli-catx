@@ -72,8 +72,7 @@ impl CatboxUploader {
             }
         }
     }
-
-    // 创建专辑
+    
     pub async fn create_album(
         &self,
         title: &str,
@@ -98,12 +97,11 @@ impl CatboxUploader {
 
         match res {
             Ok(response) => {
-                let status = response.status(); // 提取状态码
+                let status = response.status();
                 let text = response.text().await.context("Failed to read response body")?;
-
                 if status.is_success() {
                     println!("Album created: {}", text);
-                    Ok(text) // 返回专辑 ID
+                    Ok(text)
                 } else {
                     Err(anyhow::anyhow!(format!(
                         "创建专辑失败: 状态码: {}, 响应内容: {}",
@@ -119,7 +117,7 @@ impl CatboxUploader {
         }
     }
 
-    // 将文件添加到专辑
+    // 添加文件到专辑
     pub async fn add_to_album(&self, short: &str, files: &[&str]) -> Result<()> {
         let file_list = files.join(" ");
         let form = Form::new()
@@ -138,9 +136,8 @@ impl CatboxUploader {
 
         match res {
             Ok(response) => {
-                let status = response.status(); // 提取状态码
+                let status = response.status();
                 let text = response.text().await.context("Failed to read response body")?;
-
                 if status.is_success() {
                     println!("Files added to album: {}", text);
                     Ok(())
