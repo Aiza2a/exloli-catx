@@ -66,6 +66,7 @@ impl CatboxUploader {
         }
         Err(err) => Err(anyhow::anyhow!("Failed to send request to Catbox API: {:?}", err)),
     }
+}
 
 
     // 创建专辑
