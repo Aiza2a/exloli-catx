@@ -26,13 +26,10 @@ impl CatboxUploader {
         file_bytes: &[u8],
     ) -> Result<String> {
         let form = Form::new()
-            .text("reqtype", "fileupload") // 请求类型
-            .text("userhash", self.userhash.clone()) // 用户哈希（可以为空，用于匿名上传）
+            .text("reqtype", "fileupload")
+            .text("userhash", self.userhash.clone())
             .part("fileToUpload", Part::bytes(file_bytes.to_vec()).file_name(file_name.to_string()));
-
-        println!("Sending request to: {}", &self.api_url);
-        println!("Userhash: {}", self.userhash);
-
+    
         let res = self.client
             .post(&self.api_url)
             .multipart(form)
@@ -40,50 +37,41 @@ impl CatboxUploader {
             .timeout(Duration::from_secs(30))
             .send()
             .await;
-
+    
         match res {
             Ok(response) => {
                 let status = response.status(); // 提取状态码
                 let text = response.text().await.context("Failed to read response body")?;
-
+    
                 if status.is_success() {
-                println!("Response from Catbox: {}", text);
-                if text.starts_with("https://files.catbox.moe/") {
-                    Ok(text) // 返回完整的 URL
+                    // 修复：仅返回相对路径，避免重复前缀
+                    if text.starts_with("https://files.catbox.moe/") {
+                        let url = text.strip_prefix("https://files.catbox.moe/").unwrap_or(&text);
+                        Ok(format!("https://files.catbox.moe/{}", url)) // 确保返回完整 URL
+                    } else {
+                        Err(anyhow::anyhow!(format!(
+                            "响应中返回的不是有效 URL，响应内容: {}",
+                            text
+                        )))
+                    }
                 } else {
                     Err(anyhow::anyhow!(format!(
-                        "响应中返回的不是有效 URL，响应内容: {}",
+                        "上传失败: 状态码: {}, 响应内容: {}",
+                        status,
                         text
                     )))
                 }
-            } else {
-                Err(anyhow::anyhow!(format!(
-                    "上传失败: 状态码: {}, 响应内容: {}",
-                    status,
-                    text
-                )))
             }
+            Err(err) => Err(anyhow::anyhow!("Failed to send request to Catbox API: {:?}", err)),
         }
-        Err(err) => Err(anyhow::anyhow!("Failed to send request to Catbox API: {:?}", err)),
     }
-}
 
-
-    // 创建专辑
     pub async fn create_album(
         &self,
         title: &str,
         description: &str,
         files: &[&str], // 文件链接数组，直接使用完整链接
     ) -> Result<String> {
-        let validated_files: Vec<String> = files
-            .iter()
-            .map(|file| {
-                file.strip_prefix("https://files.catbox.moe/")
-                    .map(|s| format!("https://files.catbox.moe/{}", s))
-                    .unwrap_or_else(|| file.to_string())
-            })
-            .collect();
         let file_list = files.join(" "); // 拼接文件列表，用空格分隔
         let form = Form::new()
             .text("reqtype", "createalbum")
@@ -121,6 +109,7 @@ impl CatboxUploader {
             ))),
         }
     }
+
 
     // 添加文件到专辑
     pub async fn add_to_album(&self, short: &str, files: &[&str]) -> Result<()> {
