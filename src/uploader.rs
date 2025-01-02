@@ -253,6 +253,18 @@ impl ExloliUploader {
             {
                 Ok(album_id) => {
                     info!("专辑创建成功，专辑 ID: {}", album_id);
+
+                    // 创建新的结构体 GalleryWithAlbumId
+                    let gallery_with_album = GalleryWithAlbumId {
+                        gallery,
+                        album_id: album_id.to_string(),
+                    };
+
+                    // 将新的结构体传递给 create_message_text 函数
+                    let message_text = self.create_message_text(&gallery_with_album).await?;
+
+                    // 继续处理消息，例如发送到 Telegram
+                    // self.send_to_telegram(&message_text).await?;
                 }
                 Err(err) => {
                     eprintln!("专辑创建失败: {}", err);
@@ -262,6 +274,7 @@ impl ExloliUploader {
 
         Ok(())
     }
+}
 
 
     // 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
@@ -287,16 +300,18 @@ impl ExloliUploader {
     }
 
     /// 为画廊生成一条可供发送的 telegram 消息正文
-    async fn create_message_text<T: GalleryInfo>(
+    async fn create_message_text(
         &self,
-        gallery: &T,
-        article: &str,
+        gallery_with_album: &GalleryWithAlbumId<'_>,  // 接收 GalleryWithAlbumId 类型
     ) -> Result<String> {
+        let gallery = &gallery_with_album.gallery;
+        let album_url = format!("https://catbox.moe/c/+{}", gallery_with_album.album_id);
+    
         // 首先，将 tag 翻译
         let re = Regex::new("[-/· ]").unwrap();
         let tags = self.trans.trans_tags(gallery.tags());
         let mut text = String::new();
-        text.push_str(&format!("<b>{}</b>\n\n",gallery.title_jp()));
+        text.push_str(&format!("<b>{}</b>\n\n", gallery.title_jp()));
         for (ns, tag) in tags {
             let tag = tag
                 .iter()
@@ -305,10 +320,13 @@ impl ExloliUploader {
                 .join(" ");
             text.push_str(&format!("⁣⁣⁣⁣　<code>{}</code>: <i>{}</i>\n", ns, tag))
         }
+    
+        // 在正文中插入 CATBOX 链接
         text.push_str(&format!(
-            "\n<b>〔 <a href=\"{}\">即 時 預 覽</a> 〕</b>/",
-            article
+            "\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>/",
+            album_url
         ));
+    
         text.push_str(&format!(
             "<b>〔 <a href=\"{}\">来 源</a> 〕</b>",
             gallery.url().url()
@@ -344,4 +362,3 @@ impl ExloliUploader {
         }
         Ok(())
     }
-}
