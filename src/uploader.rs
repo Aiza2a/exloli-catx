@@ -235,7 +235,7 @@ impl ExloliUploader {
         // 如果有上传的文件，则创建专辑
         if !uploaded_files.is_empty() {
             let album_title = gallery.title_jp(); // 优先使用日文标题
-            let album_desc = self.config.author_name.clone(); // 描述为作者名
+            let album_desc = self.config.telegraph.author_name.clone(); // 描述为作者名
     
             match catbox
                 .create_album(
