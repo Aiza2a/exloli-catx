@@ -9,10 +9,10 @@ use reqwest::{Client, StatusCode};
 use telegraph_rs::{html_to_node, Telegraph};
 use teloxide::prelude::*;
 use teloxide::types::MessageId;
-use teloxide::utils::html::{code_inline, link};
+//use teloxide::utils::html::{code_inline, link};
 use tokio::task::JoinHandle;
 use tokio::time;
-use tracing::{debug, error, info, Instrument};
+use tracing::{debug, error, info};
 
 use crate::bot::Bot;
 use crate::config::Config;
@@ -20,9 +20,8 @@ use crate::database::{
     GalleryEntity, ImageEntity, MessageEntity, PageEntity, PollEntity, TelegraphEntity,
 };
 use crate::ehentai::{EhClient, EhGallery, EhGalleryUrl, GalleryInfo};
-use crate::s3::S3Uploader;
+use crate::catbox::CatboxUploader;
 use crate::tags::EhTagTransDB;
-use crate::utils::pad_left;
 
 #[derive(Debug, Clone)]
 pub struct ExloliUploader {
@@ -182,75 +181,81 @@ impl ExloliUploader {
         Ok(Client::new().head(url).send().await?.status() != StatusCode::NOT_FOUND)
     }
 }
+async fn upload_gallery_image(&self, gallery: &EhGallery) -> Result<()> {
+    // 收集需要上传的图片
+    let mut pages = vec![];
+    for page in &gallery.pages {
+        match ImageEntity::get_by_hash(page.hash()).await? {
+            Some(img) => {
+                PageEntity::create(page.gallery_id(), page.page(), img.id).await?;
+            }
+            None => pages.push(page.clone()),
+        }
+    }
+    info!("需要上传的图片数: {}", pages.len());
 
-impl ExloliUploader {
-    /// 获取某个画廊里的所有图片，并且上传到 telegrpah，如果已经上传过的，会跳过上传
-    async fn upload_gallery_image(&self, gallery: &EhGallery) -> Result<()> {
-        // 扫描所有图片
-        // 对于已经上传过的图片，不需要重复上传，只需要插入 PageEntity 记录即可
-        let mut pages = vec![];
-        for page in &gallery.pages {
-            match ImageEntity::get_by_hash(page.hash()).await? {
-                Some(img) => {
-                    // NOTE: 此处存在重复插入的可能，但是由于 PageEntity::create 使用 OR IGNORE，所以不影响
-                    PageEntity::create(page.gallery_id(), page.page(), img.id).await?;
-                }
-                None => pages.push(page.clone()),
+    let client = self.ehentai.clone();
+    let catbox = CatboxUploader::new(
+        &self.config.catbox.api_url,
+        &self.config.catbox.userhash,
+    );
+
+    // 上传的文件 URL 列表
+    let mut uploaded_files = vec![];
+
+    // 上传图片
+    for page in pages {
+        let rst = client.get_image_url(&page).await?;
+        let suffix = rst.1.split('.').last().unwrap_or("jpg");
+        if suffix == "gif" {
+            continue; // 忽略 GIF 图片
+        }
+
+        let file_name = format!("{}.{}", page.hash(), suffix);
+        let file_bytes = reqwest::get(&rst.1).await?.bytes().await?;
+        debug!("已下载: {}", page.page());
+
+        // 调用 CatboxUploader 上传文件
+        match catbox.upload_file(&file_name, &file_bytes).await {
+            Ok(file_url) => {
+                debug!("已上传: {}", page.page());
+                // 记录到数据库
+                ImageEntity::create(rst.0, page.hash(), &file_url).await?;
+                PageEntity::create(page.gallery_id(), page.page(), rst.0).await?;
+                uploaded_files.push(file_url); // 收集上传成功的文件 URL
+            }
+            Err(err) => {
+                eprintln!("上传失败: {}", err);
             }
         }
-        info!("需要下载&上传 {} 张图片", pages.len());
-
-        let concurrent = self.config.threads_num;
-        let (tx, mut rx) = tokio::sync::mpsc::channel(concurrent * 2);
-        let client = self.ehentai.clone();
-
-        // 获取图片链接时不要并行，避免触发反爬限制
-        let getter = tokio::spawn(
-            async move {
-                for page in pages {
-                    let rst = client.get_image_url(&page).await?;
-                    info!("已解析：{}", page.page());
-                    tx.send((page, rst)).await?;
-                }
-                Result::<()>::Ok(())
-            }
-            .in_current_span(),
-        );
-
-        // 依次将图片下载并上传到 r2，并插入 ImageEntity 和 PageEntity 记录
-        let s3 = S3Uploader::new(&self.config.s3)?;
-        let host = self.config.s3.host.clone();
-        let client = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .connect_timeout(Duration::from_secs(30))
-            .build()?;
-        let uploader = tokio::spawn(
-            async move {
-                while let Some((page, (fileindex, url))) = rx.recv().await {
-                    let suffix = url.split('.').last().unwrap_or("jpg");
-                    if suffix == "gif" {
-                        continue;
-                    }
-                    let filename = format!("{}.{}", page.hash(), suffix);
-                    let bytes = client.get(url).send().await?.bytes().await?;
-                    debug!("已下载: {}", page.page());
-                    s3.upload(&filename, &mut bytes.as_ref()).await?;
-                    debug!("已上传: {}", page.page());
-                    let url = format!("https://{}/{}", host, filename);
-                    ImageEntity::create(fileindex, page.hash(), &url).await?;
-                    PageEntity::create(page.gallery_id(), page.page(), fileindex).await?;
-                }
-                Result::<()>::Ok(())
-            }
-            .in_current_span(),
-        );
-
-        tokio::try_join!(flatten(getter), flatten(uploader))?;
-
-        Ok(())
     }
 
-    /// 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
+    // 如果有上传的文件，则创建专辑
+    if !uploaded_files.is_empty() {
+        let album_title = gallery.title_jp(); // 优先使用日文标题
+        let album_desc = self.config.author_name.clone(); // 描述为作者名
+
+        match catbox
+            .create_album(
+                &album_title,
+                &album_desc,
+                &uploaded_files.iter().map(String::as_str).collect::<Vec<_>>(),
+            )
+            .await
+        {
+            Ok(album_id) => {
+                info!("专辑创建成功，专辑 ID: {}", album_id);
+            }
+            Err(err) => {
+                eprintln!("专辑创建失败: {}", err);
+            }
+        }
+    }
+
+    Ok(())
+
+
+/// 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
     /// 为了防止画廊被删除后无法更新，此处不应该依赖 EhGallery
     async fn publish_telegraph_article<T: GalleryInfo>(
         &self,
@@ -265,7 +270,7 @@ impl ExloliUploader {
         for img in images {
             html.push_str(&format!(r#"<img src="{}">"#, img.url()));
         }
-        html.push_str(&format!("<p>图片总数：{}</p>", gallery.pages()));
+        html.push_str(&format!("<p>ᴘᴀɢᴇꜱ : {}</p>", gallery.pages()));
 
         let node = html_to_node(&html);
         // 文章标题优先使用日文
@@ -284,20 +289,25 @@ impl ExloliUploader {
         let re = Regex::new("[-/· ]").unwrap();
         let tags = self.trans.trans_tags(gallery.tags());
         let mut text = String::new();
+        text.push_str(&format!("<b>{}</b>\n\n",gallery.title_jp()));
         for (ns, tag) in tags {
             let tag = tag
                 .iter()
-                .map(|s| format!("#{}", re.replace_all(s, "_")))
+                .map(|s| {
+                  format!("#{}", re.replace_all(s, "_"))
+                 })
                 .collect::<Vec<_>>()
                 .join(" ");
-            text.push_str(&format!("{}: {}\n", code_inline(&pad_left(&ns, 6)), tag))
+            text.push_str(&format!("⁣⁣⁣⁣　<code>{}</code>: <i>{}</i>\n", ns, tag))
         }
-
-        text.push_str(
-            &format!("{}: {}\n", code_inline("  预览"), link(article, &gallery.title()),),
-        );
-        text.push_str(&format!("{}: {}", code_inline("原始地址"), gallery.url().url()));
-
+        text.push_str(&format!(
+            "\n<b>〔 <a href=\"{}\">即 時 預 覽</a> 〕</b>/",
+            article
+        ));
+        text.push_str(&format!(
+            "<b>〔 <a href=\"{}\">来 源</a> 〕</b>",
+            gallery.url().url()
+        ));
         Ok(text)
     }
 }
