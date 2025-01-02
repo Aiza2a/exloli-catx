@@ -19,7 +19,6 @@ impl CatboxUploader {
         }
     }
 
-    // 上传文件方法
     pub async fn upload_file(
         &self,
         file_name: &str,
@@ -44,10 +43,21 @@ impl CatboxUploader {
                 let text = response.text().await.context("Failed to read response body")?;
     
                 if status.is_success() {
-                    // 修复：检查返回的链接，确保只返回正确格式的URL
+                    println!("Response from Catbox: {}", text);
+    
+                    // 处理返回的 URL，确保去除多余的前缀
                     if text.starts_with("https://files.catbox.moe/") {
-                        let url = text.strip_prefix("https://files.catbox.moe/").unwrap_or(&text);
-                        Ok(format!("https://files.catbox.moe/{}", url)) // 确保返回完整 URL
+                        // 去除多余的前缀
+                        let clean_url = text
+                            .strip_prefix("https://files.catbox.moe/")
+                            .unwrap_or(&text); // 如果没有匹配前缀，保留原 URL
+    
+                        // 确保 URL 不重复拼接前缀
+                        if clean_url.starts_with("https://files.catbox.moe/") {
+                            return Ok(clean_url.to_string());
+                        } else {
+                            return Ok(format!("https://files.catbox.moe/{}", clean_url));
+                        }
                     } else {
                         Err(anyhow::anyhow!(format!(
                             "响应中返回的不是有效 URL，响应内容: {}",
@@ -65,6 +75,7 @@ impl CatboxUploader {
             Err(err) => Err(anyhow::anyhow!("Failed to send request to Catbox API: {:?}", err)),
         }
     }
+
 
 
     pub async fn create_album(
