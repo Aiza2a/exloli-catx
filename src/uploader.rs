@@ -323,7 +323,7 @@ impl ExloliUploader {
         ));
         if let Some(album_url) = album_url {
             text.push_str(&format!(
-                "\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>/",
+                "\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>",
                 album_url
             ));
         }
