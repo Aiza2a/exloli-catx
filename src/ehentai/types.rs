@@ -164,18 +164,31 @@ pub struct GalleryWithAlbumId<'a> {
 }
 
 impl<'a> GalleryInfo for GalleryWithAlbumId<'a> {
-    fn url(&self) -> EhGalleryUrl;
+    fn url(&self) -> EhGalleryUrl {
+        self.gallery.url()
+    }
 
-    fn title(&self) -> String;
+    fn title(&self) -> String {
+        self.gallery.title()
+    }
 
-    fn title_jp(&self) -> String;
+    fn title_jp(&self) -> String {
+        self.gallery.title_jp()
+    }
 
-    fn tags(&self) -> &IndexMap<String, Vec<String>>;
+    fn tags(&self) -> &IndexMap<String, Vec<String>> {
+        self.gallery.tags()
+    }
 
-    fn pages(&self) -> usize;
+    fn pages(&self) -> usize {
+        self.gallery.pages()
+    }
 
-    fn cover(&self) -> usize;
+    fn cover(&self) -> usize {
+        self.gallery.cover()
+    }
 }
+
 
 impl GalleryInfo for EhGallery {
     fn url(&self) -> EhGalleryUrl {
