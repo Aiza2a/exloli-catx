@@ -181,7 +181,6 @@ impl ExloliUploader {
         Ok(Client::new().head(url).send().await?.status() != StatusCode::NOT_FOUND)
     }
 }
-
 impl ExloliUploader {
     async fn upload_gallery_image(&self, gallery: &EhGallery) -> Result<()> {
         // 收集需要上传的图片
@@ -234,8 +233,8 @@ impl ExloliUploader {
 
         // 如果有上传的文件，则创建专辑
         if !uploaded_files.is_empty() {
-            let album_title = gallery.title_jp();
-            let album_desc = self.config.telegraph.author_name.clone();
+            let album_title = gallery.title_jp(); // 优先使用日文标题
+            let album_desc = self.config.telegraph.author_name.clone(); // 描述为作者名
 
             album_url = match catbox
                 .create_album(
@@ -248,7 +247,7 @@ impl ExloliUploader {
                 Ok(album_id) => {
                     let url = format!("https://catbox.moe/c/{}", album_id);
                     info!("专辑创建成功: {}", url);
-                    url
+                    url // 返回生成的专辑链接
                 }
                 Err(err) => {
                     eprintln!("专辑创建失败: {}", err);
@@ -280,7 +279,10 @@ impl ExloliUploader {
         for img in images {
             html.push_str(&format!(r#"<img src="{}">"#, img.url()));
         }
-        html.push_str(&format!("<p>ᴘᴀɢᴇꜱ : {}</p>", gallery.pages()));
+        html.push_str(&format!(
+            r#"<p><a href="{}">完整专辑链接</a></p>"#,
+            album_url
+        ));
 
         let node = html_to_node(&html);
         // 文章标题优先使用日文
@@ -298,7 +300,7 @@ impl ExloliUploader {
         let re = Regex::new("[-/· ]").unwrap();
         let tags = self.trans.trans_tags(gallery.tags());
         let mut text = String::new();
-        text.push_str(&format!("<b>{}</b>\n\n",gallery.title_jp()));
+        text.push_str(&format!("<b>{}</b>\n\n", gallery.title_jp()));
         for (ns, tag) in tags {
             let tag = tag
                 .iter()
@@ -322,6 +324,7 @@ impl ExloliUploader {
         Ok(text)
     }
 }
+
 
 async fn flatten<T>(handle: JoinHandle<Result<T>>) -> Result<T> {
     match handle.await {
