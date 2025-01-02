@@ -246,7 +246,8 @@ impl ExloliUploader {
                 .await
             {
                 Ok(album_id) => {
-                    info!("专辑创建成功，专辑 ID: {}", album_id);
+                    let album_url = format!("https://catbox.moe/c/{}", album_id);
+                    info!("专辑创建成功: {}", album_url);
                 }
                 Err(err) => {
                     eprintln!("专辑创建失败: {}", err);
@@ -261,6 +262,7 @@ impl ExloliUploader {
     async fn publish_telegraph_article<T: GalleryInfo>(
         &self,
         gallery: &T,
+        album_url: &str,
     ) -> Result<telegraph_rs::Page> {
         let images = ImageEntity::get_by_gallery_id(gallery.url().id()).await?;
 
@@ -303,8 +305,12 @@ impl ExloliUploader {
             article
         ));
         text.push_str(&format!(
-            "<b>〔 <a href=\"{}\">来 源</a> 〕</b>",
+            "<b>〔 <a href=\"{}\">来 源</a> 〕</b>/",
             gallery.url().url()
+        ));
+        text.push_str(&format!(
+            "<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>",
+            album_url
         ));
         Ok(text)
     }
