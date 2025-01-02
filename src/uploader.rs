@@ -19,7 +19,7 @@ use crate::config::Config;
 use crate::database::{
     GalleryEntity, ImageEntity, MessageEntity, PageEntity, PollEntity, TelegraphEntity,
 };
-use crate::ehentai::{EhClient, EhGallery, EhGalleryUrl, GalleryInfo};
+use crate::ehentai::{EhClient, EhGallery, EhGalleryUrl, GalleryInfo, GalleryWithAlbumId};
 use crate::catbox::CatboxUploader;
 use crate::tags::EhTagTransDB;
 
