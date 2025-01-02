@@ -195,16 +195,16 @@ impl ExloliUploader {
             }
         }
         info!("需要上传的图片数: {}", pages.len());
-    
+
         let client = self.ehentai.clone();
         let catbox = CatboxUploader::new(
             &self.config.catbox.api_url,
             &self.config.catbox.userhash,
         );
-    
-        // 上传的文件 URL 列表
+
+        // 上传的文件短链接列表
         let mut uploaded_files = vec![];
-    
+
         // 上传图片
         for page in pages {
             let rst = client.get_image_url(&page).await?;
@@ -212,11 +212,11 @@ impl ExloliUploader {
             if suffix == "gif" {
                 continue; // 忽略 GIF 图片
             }
-    
+
             let file_name = format!("{}.{}", page.hash(), suffix);
             let file_bytes = reqwest::get(&rst.1).await?.bytes().await?.to_vec();
             debug!("已下载: {}", page.page());
-    
+
             // 调用 CatboxUploader 上传文件
             match catbox.upload_file(&file_name, &file_bytes).await {
                 Ok(file_url) => {
@@ -224,19 +224,25 @@ impl ExloliUploader {
                     // 记录到数据库
                     ImageEntity::create(rst.0, page.hash(), &file_url).await?;
                     PageEntity::create(page.gallery_id(), page.page(), rst.0).await?;
-                    uploaded_files.push(file_url); // 收集上传成功的文件 URL
+
+                    // 只收集文件的短链接（文件名）
+                    let file_short = file_url
+                        .split('/')
+                        .last()
+                        .unwrap_or(""); // 获取短链接部分，如：4b71m5.webp
+                    uploaded_files.push(file_short.to_string());
                 }
                 Err(err) => {
                     eprintln!("上传失败: {}", err);
                 }
             }
         }
-    
+
         // 如果有上传的文件，则创建专辑
         if !uploaded_files.is_empty() {
             let album_title = gallery.title_jp(); // 优先使用日文标题
             let album_desc = self.config.telegraph.author_name.clone(); // 描述为作者名
-    
+
             match catbox
                 .create_album(
                     &album_title,
@@ -253,9 +259,10 @@ impl ExloliUploader {
                 }
             }
         }
-    
+
         Ok(())
     }
+
 
     // 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
     async fn publish_telegraph_article<T: GalleryInfo>(
