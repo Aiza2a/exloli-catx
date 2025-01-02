@@ -256,7 +256,7 @@ impl ExloliUploader {
 
                     // 创建新的结构体 GalleryWithAlbumId
                     let gallery_with_album = GalleryWithAlbumId {
-                        gallery,
+                        gallery, &gallery,
                         album_id: album_id.to_string(),
                     };
 
@@ -320,7 +320,6 @@ impl ExloliUploader {
             text.push_str(&format!("⁣⁣⁣⁣　<code>{}</code>: <i>{}</i>\n", ns, tag))
         }
     
-        // 在正文中插入 CATBOX 链接
         text.push_str(&format!(
             "\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>/",
             album_url
