@@ -157,7 +157,13 @@ pub struct EhGallery {
     pub cover: usize,
 }
 
-pub trait GalleryInfo {
+// 新结构体：GalleryWithAlbumId
+pub struct GalleryWithAlbumId<'a> {
+    pub gallery: &'a dyn GalleryInfo,
+    pub album_id: String,
+}
+
+impl<'a> GalleryInfo for GalleryWithAlbumId<'a> {
     fn url(&self) -> EhGalleryUrl;
 
     fn title(&self) -> String;
