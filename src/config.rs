@@ -22,7 +22,7 @@ pub struct Config {
     pub exhentai: ExHentai,
     pub telegraph: Telegraph,
     pub telegram: Telegram,
-    pub s3: S3,
+    pub catbox: Catbox,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -62,19 +62,9 @@ pub struct Telegram {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct S3 {
-    /// region
-    pub region: String,
-    /// S3 endpoint
-    pub endpoint: String,
-    /// bucket 名称
-    pub bucket: String,
-    /// access-key
-    pub access_key: String,
-    /// secret-key
-    pub secret_key: String,
-    /// 公开访问连接
-    pub host: String,
+pub struct Catbox {
+    pub userhash: String,
+    pub api_url: String,
 }
 
 impl Config {
