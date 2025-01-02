@@ -301,6 +301,7 @@ impl ExloliUploader {
     /// 为画廊生成一条可供发送的 telegram 消息正文
     async fn create_message_text(
         &self,
+        article: &str,
         gallery_with_album: &GalleryWithAlbumId<'_>,  // 接收 GalleryWithAlbumId 类型
     ) -> Result<String> {
         let gallery = &gallery_with_album.gallery;
@@ -324,6 +325,10 @@ impl ExloliUploader {
             "\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>/",
             album_url
         ));
+        text.push_str(&format!( 
+             "\n<b>〔 <a href=\"{}\">即 時 預 覽</a> 〕</b>/", 
+             article 
+         ));
     
         text.push_str(&format!(
             "<b>〔 <a href=\"{}\">来 源</a> 〕</b>",
