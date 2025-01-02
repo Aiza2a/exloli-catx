@@ -261,8 +261,6 @@ impl ExloliUploader {
         let message_text = self.create_message_text(gallery, &article.url, None).await?;
         info!("Telegram 消息生成成功: {}", message_text);
 
-        info!("Telegram 消息生成成功: {}", message_text);
-
         Ok(())
     }
 
