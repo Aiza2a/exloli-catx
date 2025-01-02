@@ -239,6 +239,7 @@ impl ExloliUploader {
         }
 
         // 如果有上传的文件，则创建专辑
+        let mut album_url = None; 
         if !uploaded_files.is_empty() {
             let album_title = gallery.title_jp(); // 优先使用日文标题
             let album_desc = self.config.telegraph.author_name.clone(); // 描述为作者名
@@ -253,14 +254,16 @@ impl ExloliUploader {
             {
                 Ok(album_id) => {
                     info!("专辑创建成功，专辑 ID: {}", album_id);
+                    album_url = Some(format!("https://catbox.moe/c/+{}", album_id));
                 }
                 Err(err) => {
                     eprintln!("专辑创建失败: {}", err);
                 }
             }
         }
-
-        Ok(())
+        let message_text = self
+            .create_message_text(&gallery, article, album_url.as_deref())
+            .await?;
     }
 
 
@@ -291,6 +294,7 @@ impl ExloliUploader {
         &self,
         gallery: &T,
         article: &str,
+        album_url: Option<&str>,
     ) -> Result<String> {
         // 首先，将 tag 翻译
         let re = Regex::new("[-/· ]").unwrap();
@@ -310,9 +314,15 @@ impl ExloliUploader {
             article
         ));
         text.push_str(&format!(
-            "<b>〔 <a href=\"{}\">来 源</a> 〕</b>",
+            "<b>〔 <a href=\"{}\">来 源</a> 〕</b>/",
             gallery.url().url()
         ));
+        if let Some(url) = album_url {
+            text.push_str(&format!(
+                "\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>/",
+                url
+            ));
+        }
         Ok(text)
     }
 }
