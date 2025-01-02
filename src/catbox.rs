@@ -44,7 +44,7 @@ impl CatboxUploader {
                 let text = response.text().await.context("Failed to read response body")?;
     
                 if status.is_success() {
-                    // 修复：仅返回相对路径，避免重复前缀
+                    // 修复：检查返回的链接，确保只返回正确格式的URL
                     if text.starts_with("https://files.catbox.moe/") {
                         let url = text.strip_prefix("https://files.catbox.moe/").unwrap_or(&text);
                         Ok(format!("https://files.catbox.moe/{}", url)) // 确保返回完整 URL
@@ -65,6 +65,7 @@ impl CatboxUploader {
             Err(err) => Err(anyhow::anyhow!("Failed to send request to Catbox API: {:?}", err)),
         }
     }
+
 
     pub async fn create_album(
         &self,
