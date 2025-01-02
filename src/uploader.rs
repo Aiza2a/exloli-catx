@@ -237,7 +237,8 @@ impl ExloliUploader {
             let album_title = gallery.title_jp(); // 优先使用日文标题
             let album_desc = self.config.telegraph.author_name.clone(); // 描述为作者名
     
-            match catbox
+            // 专辑链接
+            let album_url = match catbox
                 .create_album(
                     &album_title,
                     &album_desc,
@@ -246,17 +247,26 @@ impl ExloliUploader {
                 .await
             {
                 Ok(album_id) => {
-                    let album_url = format!("https://catbox.moe/c/{}", album_id);
-                    info!("专辑创建成功: {}", album_url);
+                    let url = format!("https://catbox.moe/c/{}", album_id);
+                    info!("专辑创建成功: {}", url);
+                    url // 返回生成的专辑链接
                 }
                 Err(err) => {
                     eprintln!("专辑创建失败: {}", err);
+                    return Err(anyhow::anyhow!("专辑创建失败"));
                 }
-            }
+            };
+    
+            // 调用 publish_telegraph_article
+            let article = self
+                .publish_telegraph_article(gallery, &album_url)
+                .await?;
+    
         }
     
         Ok(())
     }
+
 
     // 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
     async fn publish_telegraph_article<T: GalleryInfo>(
