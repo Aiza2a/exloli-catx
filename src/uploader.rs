@@ -217,32 +217,26 @@ impl ExloliUploader {
             let file_bytes = reqwest::get(&rst.1).await?.bytes().await?.to_vec();
             debug!("已下载: {}", page.page());
 
-            // 调用 CatboxUploader 上传文件
             match catbox.upload_file(&file_name, &file_bytes).await {
                 Ok(file_url) => {
                     debug!("已上传: {}", page.page());
-                    // 记录到数据库
                     ImageEntity::create(rst.0, page.hash(), &file_url).await?;
                     PageEntity::create(page.gallery_id(), page.page(), rst.0).await?;
 
-                    // 只收集文件的短链接（文件名）
-                    let file_short = file_url
-                        .split('/')
-                        .last()
-                        .unwrap_or(""); // 获取短链接部分，如：4b71m5.webp
+                    let file_short = file_url.split('/').last().unwrap_or("");
                     uploaded_files.push(file_short.to_string());
                 }
                 Err(err) => {
-                    eprintln!("上传失败: {}", err);
+                    eprintln!("上传失败 (文件: {}): {}", file_name, err);
                 }
             }
         }
 
-        // 如果有上传的文件，则创建专辑
+        // 创建专辑
         let mut album_url = None; 
         if !uploaded_files.is_empty() {
-            let album_title = gallery.title_jp(); // 优先使用日文标题
-            let album_desc = self.config.telegraph.author_name.clone(); // 描述为作者名
+            let album_title = gallery.title_jp();
+            let album_desc = self.config.telegraph.author_name.clone();
 
             match catbox
                 .create_album(
@@ -262,17 +256,22 @@ impl ExloliUploader {
             }
         }
 
-        // 获取文章链接
-        let article = self.publish_telegraph_article(&gallery).await?.url;
+        // 生成并返回消息
+        let article = self.publish_telegraph_article(gallery).await?;
+        let message_text = self.create_message_text(gallery, &article.url, None).await?;
+        info!("Telegram 消息生成成功: {}", message_text);
 
-        // 生成消息正文
-        let message_text = self
-            .create_message_text(gallery, &article, album_url.as_deref())
-            .await?;
+        info!("Telegram 消息生成成功: {}", message_text);
 
         Ok(())
     }
 
+    pub async fn recheck(&self, entities: Vec<GalleryEntity>) -> Result<()> {
+        for entity in entities {
+            info!("Rechecking gallery entity: {}", entity.id);
+        }
+        Ok(())
+    }
 
     // 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
     async fn publish_telegraph_article<T: GalleryInfo>(
