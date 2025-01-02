@@ -181,82 +181,83 @@ impl ExloliUploader {
         Ok(Client::new().head(url).send().await?.status() != StatusCode::NOT_FOUND)
     }
 }
-async fn upload_gallery_image(&self, gallery: &EhGallery) -> Result<()> {
-    // 收集需要上传的图片
-    let mut pages = vec![];
-    for page in &gallery.pages {
-        match ImageEntity::get_by_hash(page.hash()).await? {
-            Some(img) => {
-                PageEntity::create(page.gallery_id(), page.page(), img.id).await?;
+
+impl ExloliUploader {
+    async fn upload_gallery_image(&self, gallery: &EhGallery) -> Result<()> {
+        // 收集需要上传的图片
+        let mut pages = vec![];
+        for page in &gallery.pages {
+            match ImageEntity::get_by_hash(page.hash()).await? {
+                Some(img) => {
+                    PageEntity::create(page.gallery_id(), page.page(), img.id).await?;
+                }
+                None => pages.push(page.clone()),
             }
-            None => pages.push(page.clone()),
         }
+        info!("需要上传的图片数: {}", pages.len());
+    
+        let client = self.ehentai.clone();
+        let catbox = CatboxUploader::new(
+            &self.config.catbox.api_url,
+            &self.config.catbox.userhash,
+        );
+    
+        // 上传的文件 URL 列表
+        let mut uploaded_files = vec![];
+    
+        // 上传图片
+        for page in pages {
+            let rst = client.get_image_url(&page).await?;
+            let suffix = rst.1.split('.').last().unwrap_or("jpg");
+            if suffix == "gif" {
+                continue; // 忽略 GIF 图片
+            }
+    
+            let file_name = format!("{}.{}", page.hash(), suffix);
+            let file_bytes = reqwest::get(&rst.1).await?.bytes().await?.to_vec();
+            debug!("已下载: {}", page.page());
+    
+            // 调用 CatboxUploader 上传文件
+            match catbox.upload_file(&file_name, &file_bytes).await {
+                Ok(file_url) => {
+                    debug!("已上传: {}", page.page());
+                    // 记录到数据库
+                    ImageEntity::create(rst.0, page.hash(), &file_url).await?;
+                    PageEntity::create(page.gallery_id(), page.page(), rst.0).await?;
+                    uploaded_files.push(file_url); // 收集上传成功的文件 URL
+                }
+                Err(err) => {
+                    eprintln!("上传失败: {}", err);
+                }
+            }
+        }
+    
+        // 如果有上传的文件，则创建专辑
+        if !uploaded_files.is_empty() {
+            let album_title = gallery.title_jp(); // 优先使用日文标题
+            let album_desc = self.config.author_name.clone(); // 描述为作者名
+    
+            match catbox
+                .create_album(
+                    &album_title,
+                    &album_desc,
+                    &uploaded_files.iter().map(String::as_str).collect::<Vec<_>>(),
+                )
+                .await
+            {
+                Ok(album_id) => {
+                    info!("专辑创建成功，专辑 ID: {}", album_id);
+                }
+                Err(err) => {
+                    eprintln!("专辑创建失败: {}", err);
+                }
+            }
+        }
+    
+        Ok(())
     }
-    info!("需要上传的图片数: {}", pages.len());
 
-    let client = self.ehentai.clone();
-    let catbox = CatboxUploader::new(
-        &self.config.catbox.api_url,
-        &self.config.catbox.userhash,
-    );
-
-    // 上传的文件 URL 列表
-    let mut uploaded_files = vec![];
-
-    // 上传图片
-    for page in pages {
-        let rst = client.get_image_url(&page).await?;
-        let suffix = rst.1.split('.').last().unwrap_or("jpg");
-        if suffix == "gif" {
-            continue; // 忽略 GIF 图片
-        }
-
-        let file_name = format!("{}.{}", page.hash(), suffix);
-        let file_bytes = reqwest::get(&rst.1).await?.bytes().await?;
-        debug!("已下载: {}", page.page());
-
-        // 调用 CatboxUploader 上传文件
-        match catbox.upload_file(&file_name, &file_bytes).await {
-            Ok(file_url) => {
-                debug!("已上传: {}", page.page());
-                // 记录到数据库
-                ImageEntity::create(rst.0, page.hash(), &file_url).await?;
-                PageEntity::create(page.gallery_id(), page.page(), rst.0).await?;
-                uploaded_files.push(file_url); // 收集上传成功的文件 URL
-            }
-            Err(err) => {
-                eprintln!("上传失败: {}", err);
-            }
-        }
-    }
-
-    // 如果有上传的文件，则创建专辑
-    if !uploaded_files.is_empty() {
-        let album_title = gallery.title_jp(); // 优先使用日文标题
-        let album_desc = self.config.author_name.clone(); // 描述为作者名
-
-        match catbox
-            .create_album(
-                &album_title,
-                &album_desc,
-                &uploaded_files.iter().map(String::as_str).collect::<Vec<_>>(),
-            )
-            .await
-        {
-            Ok(album_id) => {
-                info!("专辑创建成功，专辑 ID: {}", album_id);
-            }
-            Err(err) => {
-                eprintln!("专辑创建失败: {}", err);
-            }
-        }
-    }
-
-    Ok(())
-
-
-/// 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
-    /// 为了防止画廊被删除后无法更新，此处不应该依赖 EhGallery
+    // 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
     async fn publish_telegraph_article<T: GalleryInfo>(
         &self,
         gallery: &T,
@@ -285,7 +286,6 @@ async fn upload_gallery_image(&self, gallery: &EhGallery) -> Result<()> {
         article: &str,
     ) -> Result<String> {
         // 首先，将 tag 翻译
-        // 并整理成 namespace: #tag1 #tag2 #tag3 的格式
         let re = Regex::new("[-/· ]").unwrap();
         let tags = self.trans.trans_tags(gallery.tags());
         let mut text = String::new();
@@ -293,9 +293,7 @@ async fn upload_gallery_image(&self, gallery: &EhGallery) -> Result<()> {
         for (ns, tag) in tags {
             let tag = tag
                 .iter()
-                .map(|s| {
-                  format!("#{}", re.replace_all(s, "_"))
-                 })
+                .map(|s| format!("#{}", re.replace_all(s, "_")))
                 .collect::<Vec<_>>()
                 .join(" ");
             text.push_str(&format!("⁣⁣⁣⁣　<code>{}</code>: <i>{}</i>\n", ns, tag))
