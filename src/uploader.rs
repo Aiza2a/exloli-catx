@@ -229,7 +229,7 @@ impl ExloliUploader {
                     let file_short = file_url
                         .split('/')
                         .last()
-                        .unwrap_or(""); // 获取短链接部分，如：4b71m5.webp
+                        .unwrap_or(&file_name); // 如果没有短链接，使用 file_name 作为默认值
                     uploaded_files.push(file_short.to_string());
                 }
                 Err(err) => {
@@ -290,7 +290,7 @@ impl ExloliUploader {
         Ok(self.telegraph.create_page(&title, &node, false).await?)
     }
 
-    /// 为画廊生成一条可供发送的 telegram 消息正文
+   // 为画廊生成一条可供发送的 telegram 消息正文
     async fn create_message_text<T: GalleryInfo>(
         &self,
         gallery: &T,
