@@ -156,8 +156,16 @@ pub struct EhGallery {
     /// 封面是第几张
     pub cover: usize,
 }
+pub trait GalleryInfo {
+    fn url(&self) -> EhGalleryUrl;
+    fn title(&self) -> String;
+    fn title_jp(&self) -> String;
+    fn tags(&self) -> &IndexMap<String, Vec<String>>;
+    fn pages(&self) -> usize;
+    fn cover(&self) -> usize;
+}
 
-// 新结构体：GalleryWithAlbumId
+// GalleryWithAlbumId struct
 pub struct GalleryWithAlbumId<'a> {
     pub gallery: &'a dyn GalleryInfo,
     pub album_id: String,
