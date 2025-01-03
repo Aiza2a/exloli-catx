@@ -263,8 +263,8 @@ impl ExloliUploader {
         Ok(())
     }
 
-    /// 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
-    /// 为了防止画廊被删除后无法更新，此处不应该依赖 EhGallery
+
+    // 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
     async fn publish_telegraph_article<T: GalleryInfo>(
         &self,
         gallery: &T,
@@ -293,7 +293,6 @@ impl ExloliUploader {
         article: &str,
     ) -> Result<String> {
         // 首先，将 tag 翻译
-        // 并整理成 namespace: #tag1 #tag2 #tag3 的格式
         let re = Regex::new("[-/· ]").unwrap();
         let tags = self.trans.trans_tags(gallery.tags());
         let mut text = String::new();
@@ -301,9 +300,7 @@ impl ExloliUploader {
         for (ns, tag) in tags {
             let tag = tag
                 .iter()
-                .map(|s| {
-                  format!("#{}", re.replace_all(s, "_"))
-                 })
+                .map(|s| format!("#{}", re.replace_all(s, "_")))
                 .collect::<Vec<_>>()
                 .join(" ");
             text.push_str(&format!("⁣⁣⁣⁣　<code>{}</code>: <i>{}</i>\n", ns, tag))
