@@ -93,21 +93,22 @@ impl ExloliUploader {
         // 上传图片、发布文章
         self.upload_gallery_image(&gallery).await?;
         let article = self.publish_telegraph_article(&gallery).await?;
+        let album_url = format!("https://catbox.moe/c/{}", album_id); 
         // 发送消息
-        let text = self.create_message_text(&gallery, &article.url).await?;
+        let message_text = self.create_message_text(&gallery, &article.url, Some(&album_url)).await?;
         // FIXME: 此处没有考虑到父画廊没有上传，但是父父画廊上传过的情况
         // 不过一般情况下画廊应该不会那么短时间内更新多次
         let msg = if let Some(parent) = &gallery.parent {
             if let Some(pmsg) = MessageEntity::get_by_gallery(parent.id()).await? {
                 self.bot
-                    .send_message(self.config.telegram.channel_id.clone(), text)
+                    .send_message(self.config.telegram.channel_id.clone(), message_text)
                     .reply_to_message_id(MessageId(pmsg.id))
                     .await?
             } else {
-                self.bot.send_message(self.config.telegram.channel_id.clone(), text).await?
+                self.bot.send_message(self.config.telegram.channel_id.clone(), message_text).await?
             }
         } else {
-            self.bot.send_message(self.config.telegram.channel_id.clone(), text).await?
+            self.bot.send_message(self.config.telegram.channel_id.clone(), message_text).await?
         };
         // 数据入库
         MessageEntity::create(msg.id.0, gallery.url.id()).await?;
@@ -150,12 +151,12 @@ impl ExloliUploader {
         if gallery.tags != entity.tags.0 || gallery.title != entity.title {
             let telegraph = TelegraphEntity::get(gallery.url.id()).await?.unwrap();
             let album_url = format!("https://catbox.moe/c/{}", album_id); 
-            let text = self.create_message_text(&gallery, &telegraph.url, Some(&album_url)).await?;
+            let message_text = self.create_message_text(&gallery, &telegraph.url, Some(&album_url)).await?;
             self.bot
                 .edit_message_text(
                     self.config.telegram.channel_id.clone(),
                     MessageId(message.id),
-                    text,
+                    message_text,
                 )
                 .await?;
         }
@@ -170,9 +171,9 @@ impl ExloliUploader {
         info!("重新发布：{}", msg.id);
         let article = self.publish_telegraph_article(gallery).await?;
         let album_url = format!("https://catbox.moe/c/{}", album_id); 
-        let text = self.create_message_text(gallery, &article.url, Some(&album_url)).await?;
+        let message_text = self.create_message_text(gallery, &article.url, Some(&album_url)).await?;
         self.bot
-            .edit_message_text(self.config.telegram.channel_id.clone(), MessageId(msg.id), text)
+            .edit_message_text(self.config.telegram.channel_id.clone(), MessageId(msg.id), message_text)
             .await?;
         TelegraphEntity::update(gallery.id, &article.url).await?;
         Ok(())
@@ -255,15 +256,16 @@ impl ExloliUploader {
             {
                 Ok(album_id) => {
                     info!("专辑创建成功，专辑 ID: {}", album_id);
-                let message_text = self.create_message_text(gallery, article, Some(&album_url)).await?;
+                    let album_url = format!("https://catbox.moe/c/{}", album_id);
+                    let message_text = self.create_message_text(gallery, article, Some(&album_url)).await?;
 
-                self.bot
-                    .edit_message_text(
-                        self.config.telegram.channel_id.clone(),
-                        MessageId(message.id),
-                        message_text,
-                    )
-                    .await?;
+                    self.bot
+                        .edit_message_text(
+                            self.config.telegram.channel_id.clone(),
+                            MessageId(message.id),
+                            message_text,
+                        )
+                        .await?;
                 }
                 Err(err) => {
                     eprintln!("专辑创建失败: {}", err);
@@ -273,7 +275,6 @@ impl ExloliUploader {
 
         Ok(())
     }
-
 
     // 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
     async fn publish_telegraph_article<T: GalleryInfo>(
@@ -308,7 +309,7 @@ impl ExloliUploader {
         let re = Regex::new("[-/· ]").unwrap();
         let tags = self.trans.trans_tags(gallery.tags());
         let mut text = String::new();
-        text.push_str(&format!("<b>{}</b>\n\n",gallery.title_jp()));
+        text.push_str(&format!("<b>{}</b>\n\n", gallery.title_jp()));
         for (ns, tag) in tags {
             let tag = tag
                 .iter()
@@ -330,7 +331,7 @@ impl ExloliUploader {
                 "\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>", 
                 url
             ));
-        } 
+        }
         Ok(text)
     }
 }
