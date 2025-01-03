@@ -155,6 +155,8 @@ pub struct EhGallery {
     pub posted: NaiveDateTime,
     /// 封面是第几张
     pub cover: usize,
+    /// 专辑 ID，来自 Catbox
+    pub album_id: Option<String>, // 新增字段
 }
 
 pub trait GalleryInfo {
@@ -169,6 +171,8 @@ pub trait GalleryInfo {
     fn pages(&self) -> usize;
 
     fn cover(&self) -> usize;
+
+    fn album_id(&self) -> Option<String>;  // 新增方法
 }
 
 impl GalleryInfo for EhGallery {
@@ -194,6 +198,10 @@ impl GalleryInfo for EhGallery {
 
     fn cover(&self) -> usize {
         self.cover
+    }
+
+    fn album_id(&self) -> Option<String> {   // 获取 album_id
+        self.album_id.clone()
     }
 }
 
@@ -221,6 +229,10 @@ impl GalleryInfo for GalleryEntity {
     fn cover(&self) -> usize {
         0
     }
+
+    fn album_id(&self) -> Option<String> {  // 获取 album_id
+        self.album_id.clone()
+    }
 }
 
 #[cfg(test)]
@@ -244,5 +256,23 @@ mod tests {
         assert_eq!(url.gallery_id, 1932743);
         assert_eq!(url.page, 1);
         assert_eq!(url.url(), s);
+    }
+
+    #[test]
+    fn test_album_id() {
+        let gallery = EhGallery {
+            url: "https://exhentai.org/g/12345/abcde".parse().unwrap(),
+            title: "Test Gallery".to_string(),
+            title_jp: Some("テストギャラリー".to_string()),
+            tags: IndexMap::new(),
+            favorite: 100,
+            parent: None,
+            pages: vec![],
+            posted: Utc::now().naive_utc(),
+            cover: 0,
+            album_id: Some("album123".to_string()),  // 设置 album_id
+        };
+
+        assert_eq!(gallery.album_id(), Some("album123".to_string()));
     }
 }
