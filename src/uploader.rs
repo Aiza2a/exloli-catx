@@ -94,7 +94,7 @@ impl ExloliUploader {
         self.upload_gallery_image(&gallery).await?;
         let article = self.publish_telegraph_article(&gallery).await?;
         // 发送消息
-        let text = self.create_message_text(&gallery, &article.url).await?;
+        let text = self.create_message_text(&article.url, &gallery_with_album).await?;
         // FIXME: 此处没有考虑到父画廊没有上传，但是父父画廊上传过的情况
         // 不过一般情况下画廊应该不会那么短时间内更新多次
         let msg = if let Some(parent) = &gallery.parent {
@@ -149,7 +149,11 @@ impl ExloliUploader {
 
         if gallery.tags != entity.tags.0 || gallery.title != entity.title {
             let telegraph = TelegraphEntity::get(gallery.url.id()).await?.unwrap();
-            let text = self.create_message_text(&gallery, &telegraph.url).await?;
+            let gallery_with_album = GalleryWithAlbumId {
+                    gallery: &gallery,  // 引用 gallery 实例
+                    album_id: telegraph.url.to_string(),  // 使用 telegraph.url 作为 album_id
+                };
+            let text = self.create_message_text(&article.url, &gallery_with_album).await?;
             self.bot
                 .edit_message_text(
                     self.config.telegram.channel_id.clone(),
@@ -168,7 +172,11 @@ impl ExloliUploader {
     pub async fn republish(&self, gallery: &GalleryEntity, msg: &MessageEntity) -> Result<()> {
         info!("重新发布：{}", msg.id);
         let article = self.publish_telegraph_article(gallery).await?;
-        let text = self.create_message_text(gallery, &article.url).await?;
+        let gallery_with_album = GalleryWithAlbumId {
+            gallery: &gallery,  // 引用 gallery 实例
+            album_id: article.url.clone(),  // 使用 article.url 作为 album_id
+        };
+        let text = self.create_message_text(&article.url, &gallery_with_album).await?;
         self.bot
             .edit_message_text(self.config.telegram.channel_id.clone(), MessageId(msg.id), text)
             .await?;
@@ -256,12 +264,12 @@ impl ExloliUploader {
 
                     // 创建新的结构体 GalleryWithAlbumId
                     let gallery_with_album = GalleryWithAlbumId {
-                        gallery, &gallery,
+                        gallery: &gallery,
                         album_id: album_id.to_string(),
                     };
 
                     // 将新的结构体传递给 create_message_text 函数
-                    let message_text = self.create_message_text(&gallery_with_album).await?;
+                    let text = self.create_message_text(&article.url, &gallery_with_album).await?;
 
                     // 继续处理消息，例如发送到 Telegram
                     // self.send_to_telegram(&message_text).await?;
