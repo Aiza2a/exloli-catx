@@ -208,14 +208,14 @@ impl ExloliUploader {
         // 上传图片
         for page in pages {
             let rst = client.get_image_url(&page).await?;
-            let suffix = match url.split('.').last() {
-                Some(ext) if ext == "gif" => {
-                    continue; // 忽略 GIF 图片
-                }
-                Some(ext) if ext == "webp" => "jpg", // 将 webp 当作 jpg 处理
-                Some(ext) => ext, // 保持原始后缀
-                None => "jpg", // 没有后缀时默认为 jpg
-            };
+            let mut suffix = rst.1.split('.').last().unwrap_or("jpg");
+            // 检查是否为 webp 格式，若是则将后缀修改为 jpg
+            if suffix == "webp" {
+                suffix = "jpg";
+            }
+            if suffix == "gif" {
+                continue; // 忽略 GIF 图片
+            }
 
             let file_name = format!("{}.{}", page.hash(), suffix);
             let file_bytes = reqwest::get(&rst.1).await?.bytes().await?.to_vec();
