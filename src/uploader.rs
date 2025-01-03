@@ -19,7 +19,7 @@ use crate::config::Config;
 use crate::database::{
     GalleryEntity, ImageEntity, MessageEntity, PageEntity, PollEntity, TelegraphEntity,
 };
-use crate::ehentai::{EhClient, EhGallery, EhGalleryUrl, GalleryInfo, GalleryWithAlbumId};
+use crate::ehentai::{EhClient, EhGallery, EhGalleryUrl, GalleryInfo};
 use crate::catbox::CatboxUploader;
 use crate::tags::EhTagTransDB;
 
@@ -94,12 +94,7 @@ impl ExloliUploader {
         self.upload_gallery_image(&gallery).await?;
         let article = self.publish_telegraph_article(&gallery).await?;
         // 发送消息
-        let gallery_with_album = GalleryWithAlbumId {
-            gallery: &gallery,  // 引用 gallery 实例
-            album_id: article.url.clone(),  // 使用 article.url 作为 album_id
-        };
-
-        let text = self.create_message_text(&article.url, &gallery_with_album).await?;
+        let text = self.create_message_text(&gallery, &article.url).await?;
         // FIXME: 此处没有考虑到父画廊没有上传，但是父父画廊上传过的情况
         // 不过一般情况下画廊应该不会那么短时间内更新多次
         let msg = if let Some(parent) = &gallery.parent {
@@ -154,11 +149,8 @@ impl ExloliUploader {
 
         if gallery.tags != entity.tags.0 || gallery.title != entity.title {
             let telegraph = TelegraphEntity::get(gallery.url.id()).await?.unwrap();
-            let gallery_with_album = GalleryWithAlbumId {
-                    gallery: &gallery,  // 引用 gallery 实例
-                    album_id: telegraph.url.to_string(),  // 使用 telegraph.url 作为 album_id
-                };
-            let text = self.create_message_text(&telegraph.url, &gallery_with_album).await?;
+            let album_url = format!("https://catbox.moe/c/{}", album_id); 
+            let text = self.create_message_text(&gallery, &telegraph.url, Some(&album_url)).await?;
             self.bot
                 .edit_message_text(
                     self.config.telegram.channel_id.clone(),
@@ -177,11 +169,8 @@ impl ExloliUploader {
     pub async fn republish(&self, gallery: &GalleryEntity, msg: &MessageEntity) -> Result<()> {
         info!("重新发布：{}", msg.id);
         let article = self.publish_telegraph_article(gallery).await?;
-        let gallery_with_album = GalleryWithAlbumId {
-            gallery: &gallery,  // 引用 gallery 实例
-            album_id: article.url.clone(),  // 使用 article.url 作为 album_id
-        };
-        let text = self.create_message_text(&article.url, &gallery_with_album).await?;
+        let album_url = format!("https://catbox.moe/c/{}", album_id); 
+        let text = self.create_message_text(gallery, &article.url, Some(&album_url)).await?;
         self.bot
             .edit_message_text(self.config.telegram.channel_id.clone(), MessageId(msg.id), text)
             .await?;
@@ -266,18 +255,13 @@ impl ExloliUploader {
             {
                 Ok(album_id) => {
                     info!("专辑创建成功，专辑 ID: {}", album_id);
+                let message_text = self.create_message_text(gallery, article, Some(&album_url)).await?;
 
-                    // 创建新的结构体 GalleryWithAlbumId
-                    let gallery_with_album = GalleryWithAlbumId {
-                        gallery: &gallery,
-                        album_id: album_id.to_string(),
-                    };
-
-                    // 将新的结构体传递给 create_message_text 函数
-                    let text = self.create_message_text(&article.url, &gallery_with_album).await?;
-
-                    // 继续处理消息，例如发送到 Telegram
-                    // self.send_to_telegram(&message_text).await?;
+                self.bot
+                    .edit_message_text(
+                        self.config.telegram.channel_id.clone(),
+                        MessageId(message.id),
+                        message_text,
                 }
                 Err(err) => {
                     eprintln!("专辑创建失败: {}", err);
@@ -312,19 +296,17 @@ impl ExloliUploader {
     }
 
     /// 为画廊生成一条可供发送的 telegram 消息正文
-    async fn create_message_text(
+    async fn create_message_text<T: GalleryInfo>(
         &self,
+        gallery: &T,
         article: &str,
-        gallery_with_album: &GalleryWithAlbumId<'_>,  // 接收 GalleryWithAlbumId 类型
+        album_url: Option<&str>,
     ) -> Result<String> {
-        let gallery = &gallery_with_album.gallery;
-        let album_url = format!("https://catbox.moe/c/+{}", gallery_with_album.album_id);
-    
         // 首先，将 tag 翻译
         let re = Regex::new("[-/· ]").unwrap();
         let tags = self.trans.trans_tags(gallery.tags());
         let mut text = String::new();
-        text.push_str(&format!("<b>{}</b>\n\n", gallery.title_jp()));
+        text.push_str(&format!("<b>{}</b>\n\n",gallery.title_jp()));
         for (ns, tag) in tags {
             let tag = tag
                 .iter()
@@ -333,20 +315,20 @@ impl ExloliUploader {
                 .join(" ");
             text.push_str(&format!("⁣⁣⁣⁣　<code>{}</code>: <i>{}</i>\n", ns, tag))
         }
-    
         text.push_str(&format!(
-            "\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>/",
-            album_url
+            "\n<b>〔 <a href=\"{}\">即 時 預 覽</a> 〕</b>/",
+            article
         ));
-        text.push_str(&format!( 
-             "\n<b>〔 <a href=\"{}\">即 時 預 覽</a> 〕</b>/", 
-             article 
-         ));
-    
         text.push_str(&format!(
             "<b>〔 <a href=\"{}\">来 源</a> 〕</b>",
             gallery.url().url()
         ));
+        if let Some(url) = album_url {
+            text.push_str(&format!(
+                "\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>", 
+                url
+            ));
+        } 
         Ok(text)
     }
 }
