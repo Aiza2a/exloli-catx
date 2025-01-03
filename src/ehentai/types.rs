@@ -235,6 +235,18 @@ impl GalleryInfo for GalleryEntity {
     }
 }
 
+impl GalleryEntity {
+    // 添加方法 update_album_id
+    pub async fn update_album_id(id: i32, album_id: String) -> Result<()> {
+        sqlx::query("UPDATE gallery SET album_id = $1 WHERE id = $2")
+            .bind(album_id)
+            .bind(id)
+            .execute(&crate::DATABASE_POOL)
+            .await?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
