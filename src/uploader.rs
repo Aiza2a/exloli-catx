@@ -94,6 +94,11 @@ impl ExloliUploader {
         self.upload_gallery_image(&gallery).await?;
         let article = self.publish_telegraph_article(&gallery).await?;
         // 发送消息
+        let gallery_with_album = GalleryWithAlbumId {
+            gallery: &gallery,  // 引用 gallery 实例
+            album_id: article.url.clone(),  // 使用 article.url 作为 album_id
+        };
+
         let text = self.create_message_text(&article.url, &gallery_with_album).await?;
         // FIXME: 此处没有考虑到父画廊没有上传，但是父父画廊上传过的情况
         // 不过一般情况下画廊应该不会那么短时间内更新多次
@@ -153,7 +158,7 @@ impl ExloliUploader {
                     gallery: &gallery,  // 引用 gallery 实例
                     album_id: telegraph.url.to_string(),  // 使用 telegraph.url 作为 album_id
                 };
-            let text = self.create_message_text(&article.url, &gallery_with_album).await?;
+            let text = self.create_message_text(&telegraph.url, &gallery_with_album).await?;
             self.bot
                 .edit_message_text(
                     self.config.telegram.channel_id.clone(),
