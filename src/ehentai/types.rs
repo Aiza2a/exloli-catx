@@ -6,8 +6,7 @@ use indexmap::IndexMap;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-use super::error::EhError;
-use crate::database::GalleryEntity;
+use super::error::EhError;  // Assuming this is your custom error type
 
 // 画廊地址，格式为 https://exhentai.org/g/2549143/16b1b7bab0/
 #[derive(Debug, Clone, PartialEq)]
@@ -153,7 +152,7 @@ pub trait GalleryInfo {
     fn tags(&self) -> &IndexMap<String, Vec<String>>;
     fn pages(&self) -> usize;
     fn cover(&self) -> usize;
-    fn album_id(&self) -> Option<String>; // 新增方法
+    fn album_id(&self) -> Option<String>;  // 新增方法
 }
 
 impl GalleryInfo for EhGallery {
@@ -181,7 +180,7 @@ impl GalleryInfo for EhGallery {
         self.cover
     }
 
-    fn album_id(&self) -> Option<String> { // 获取 album_id
+    fn album_id(&self) -> Option<String> {   // 获取 album_id
         self.album_id.clone()
     }
 }
@@ -211,20 +210,8 @@ impl GalleryInfo for GalleryEntity {
         0
     }
 
-    fn album_id(&self) -> Option<String> { // 获取 album_id
+    fn album_id(&self) -> Option<String> {  // 获取 album_id
         self.album_id.clone()
-    }
-}
-
-impl GalleryEntity {
-    // 添加方法 update_album_id
-    pub async fn update_album_id(id: i32, album_id: String) -> Result<()> {
-        sqlx::query("UPDATE gallery SET album_id = $1 WHERE id = $2")
-            .bind(album_id)
-            .bind(id)
-            .execute(&crate::DATABASE_POOL)
-            .await?;
-        Ok(())
     }
 }
 
