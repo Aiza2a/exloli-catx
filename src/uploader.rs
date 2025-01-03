@@ -97,11 +97,6 @@ impl ExloliUploader {
         let text = self.create_message_text(&gallery, &article.url).await?;
         // FIXME: 此处没有考虑到父画廊没有上传，但是父父画廊上传过的情况
         // 不过一般情况下画廊应该不会那么短时间内更新多次
-        if let Some(album_id) = &gallery.album_id() {
-            GalleryEntity::update_album_id(gallery.url().id(), album_id.clone()).await?;
-        } else {
-            info!("No album_id found for gallery: {}", gallery.url());
-        }
         let msg = if let Some(parent) = &gallery.parent {
             if let Some(pmsg) = MessageEntity::get_by_gallery(parent.id()).await? {
                 self.bot
@@ -115,8 +110,8 @@ impl ExloliUploader {
             self.bot.send_message(self.config.telegram.channel_id.clone(), text).await?
         };
         // 数据入库
-        MessageEntity::create(msg.id.0, gallery.url().id()).await?;
-        TelegraphEntity::create(gallery.url().id(), &article.url).await?;
+        MessageEntity::create(msg.id.0, gallery.url.id()).await?;
+        TelegraphEntity::create(gallery.url.id(), &article.url).await?;
         GalleryEntity::create(&gallery).await?;
 
         Ok(())
@@ -213,10 +208,14 @@ impl ExloliUploader {
         // 上传图片
         for page in pages {
             let rst = client.get_image_url(&page).await?;
-            let suffix = rst.1.split('.').last().unwrap_or("jpg");
-            if suffix == "gif" {
-                continue; // 忽略 GIF 图片
-            }
+            let suffix = match url.split('.').last() {
+                Some(ext) if ext == "gif" => {
+                    continue; // 忽略 GIF 图片
+                }
+                Some(ext) if ext == "webp" => "jpg", // 将 webp 当作 jpg 处理
+                Some(ext) => ext, // 保持原始后缀
+                None => "jpg", // 没有后缀时默认为 jpg
+            };
 
             let file_name = format!("{}.{}", page.hash(), suffix);
             let file_bytes = reqwest::get(&rst.1).await?.bytes().await?.to_vec();
@@ -258,7 +257,6 @@ impl ExloliUploader {
             {
                 Ok(album_id) => {
                     info!("专辑创建成功，专辑 ID: {}", album_id);
-                    GalleryEntity::update_album_id(gallery.id(), album_id).await?;
                 }
                 Err(err) => {
                     eprintln!("专辑创建失败: {}", err);
@@ -319,9 +317,6 @@ impl ExloliUploader {
             "<b>〔 <a href=\"{}\">来 源</a> 〕</b>",
             gallery.url().url()
         ));
-        if let Some(album_id) = &gallery.album_id() {
-            text.push_str(&format!("\n<b>专辑 ID: {}</b>", album_id));
-        }
         Ok(text)
     }
 }
