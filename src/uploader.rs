@@ -262,6 +262,8 @@ impl ExloliUploader {
                         self.config.telegram.channel_id.clone(),
                         MessageId(message.id),
                         message_text,
+                    )
+                    .await?;
                 }
                 Err(err) => {
                     eprintln!("专辑创建失败: {}", err);
