@@ -9,6 +9,7 @@ use reqwest::{Client, StatusCode};
 use telegraph_rs::{html_to_node, Telegraph};
 use teloxide::prelude::*;
 use teloxide::types::MessageId;
+//use teloxide::utils::html::{code_inline, link};
 use tokio::task::JoinHandle;
 use tokio::time;
 use tracing::{debug, error, info};
@@ -92,13 +93,23 @@ impl ExloliUploader {
         // 上传图片、发布文章
         self.upload_gallery_image(&gallery).await?;
         let article = self.publish_telegraph_article(&gallery).await?;
-        let album_id = self.create_album(&gallery).await?;
-        let album_url = format!("https://catbox.moe/c/{}", album_id);
-
+        let album_url = format!("https://catbox.moe/c/+{}", gallery.id());
         // 发送消息
-        let message_text = self.create_message_text(&gallery, &article.url, Some(&album_url)).await?;
-        let msg = self.bot.send_message(self.config.telegram.channel_id.clone(), message_text).await?;
-
+        let text = self.create_message_text(&gallery, &article.url, &album_url).await?;
+        // FIXME: 此处没有考虑到父画廊没有上传，但是父父画廊上传过的情况
+        // 不过一般情况下画廊应该不会那么短时间内更新多次
+        let msg = if let Some(parent) = &gallery.parent {
+            if let Some(pmsg) = MessageEntity::get_by_gallery(parent.id()).await? {
+                self.bot
+                    .send_message(self.config.telegram.channel_id.clone(), text)
+                    .reply_to_message_id(MessageId(pmsg.id))
+                    .await?
+            } else {
+                self.bot.send_message(self.config.telegram.channel_id.clone(), text).await?
+            }
+        } else {
+            self.bot.send_message(self.config.telegram.channel_id.clone(), text).await?
+        };
         // 数据入库
         MessageEntity::create(msg.id.0, gallery.url.id()).await?;
         TelegraphEntity::create(gallery.url.id(), &article.url).await?;
@@ -139,14 +150,13 @@ impl ExloliUploader {
 
         if gallery.tags != entity.tags.0 || gallery.title != entity.title {
             let telegraph = TelegraphEntity::get(gallery.url.id()).await?.unwrap();
-            let album_id = self.create_album(&gallery).await?;
-            let album_url = format!("https://catbox.moe/c/{}", album_id);
-            let message_text = self.create_message_text(&gallery, &telegraph.url, Some(&album_url)).await?;
+            let album_url = format!("https://catbox.moe/c/+{}", gallery.id());
+            let text = self.create_message_text(&gallery, &telegraph.url, &album_url).await?;
             self.bot
                 .edit_message_text(
                     self.config.telegram.channel_id.clone(),
                     MessageId(message.id),
-                    message_text,
+                    text,
                 )
                 .await?;
         }
@@ -160,37 +170,106 @@ impl ExloliUploader {
     pub async fn republish(&self, gallery: &GalleryEntity, msg: &MessageEntity) -> Result<()> {
         info!("重新发布：{}", msg.id);
         let article = self.publish_telegraph_article(gallery).await?;
-        let album_id = self.create_album(gallery).await?;
-        let album_url = format!("https://catbox.moe/c/{}", album_id);
-        let message_text = self.create_message_text(gallery, &article.url, Some(&album_url)).await?;
+        let album_url = format!("https://catbox.moe/c/+{}", gallery.id());
+        let text = self.create_message_text(gallery, &article.url, &album_url).await?;
         self.bot
-            .edit_message_text(self.config.telegram.channel_id.clone(), MessageId(msg.id), message_text)
+            .edit_message_text(self.config.telegram.channel_id.clone(), MessageId(msg.id), text)
             .await?;
         TelegraphEntity::update(gallery.id, &article.url).await?;
         Ok(())
     }
 
-    /// 创建 Catbox 专辑并返回 album_id
-    async fn create_album<T: GalleryInfo>(&self, gallery: &T) -> Result<String> {
-        let mut uploaded_files = vec![];
-        // 收集文件链接
-        for page in &gallery.pages() {
-            let file_url = page.url(); // 你需要根据实际的页面获取文件 URL
-            uploaded_files.push(file_url);
+    /// 检查 telegraph 文章是否正常
+    pub async fn check_telegraph(&self, url: &str) -> Result<bool> {
+        Ok(Client::new().head(url).send().await?.status() != StatusCode::NOT_FOUND)
+    }
+}
+
+impl ExloliUploader {
+    async fn upload_gallery_image(&self, gallery: &EhGallery) -> Result<()> {
+        // 收集需要上传的图片
+        let mut pages = vec![];
+        for page in &gallery.pages {
+            match ImageEntity::get_by_hash(page.hash()).await? {
+                Some(img) => {
+                    PageEntity::create(page.gallery_id(), page.page(), img.id).await?;
+                }
+                None => pages.push(page.clone()),
+            }
         }
-
-        let album_title = gallery.title_jp();
-        let album_desc = self.config.telegraph.author_name.clone();
-
+        info!("需要上传的图片数: {}", pages.len());
+    
+        let client = self.ehentai.clone();
         let catbox = CatboxUploader::new(
             &self.config.catbox.api_url,
             &self.config.catbox.userhash,
         );
-
-        // 上传到 Catbox 创建专辑
-        let album_id = catbox.create_album(&album_title, &album_desc, &uploaded_files).await?;
-        Ok(album_id)
+    
+        // 上传的文件短链接列表
+        let mut uploaded_files = vec![];
+    
+        // 上传图片
+        for page in pages {
+            let rst = client.get_image_url(&page).await?;
+            let suffix = rst.1.split('.').last().unwrap_or("jpg");
+            if suffix == "gif" {
+                continue; // 忽略 GIF 图片
+            }
+    
+            let file_name = format!("{}.{}", page.hash(), suffix);
+            let file_bytes = reqwest::get(&rst.1).await?.bytes().await?.to_vec();
+            debug!("已下载: {}", page.page());
+    
+            // 调用 CatboxUploader 上传文件
+            match catbox.upload_file(&file_name, &file_bytes).await {
+                Ok(file_url) => {
+                    debug!("已上传: {}", page.page());
+                    // 记录到数据库
+                    ImageEntity::create(rst.0, page.hash(), &file_url).await?;
+                    PageEntity::create(page.gallery_id(), page.page(), rst.0).await?;
+    
+                    // 只收集文件的短链接（文件名）
+                    let file_short = file_url
+                        .split('/')
+                        .last()
+                        .unwrap_or(""); // 获取短链接部分，如：4b71m5.webp
+                    uploaded_files.push(file_short.to_string());
+                }
+                Err(err) => {
+                    eprintln!("上传失败: {}", err);
+                }
+            }
+        }
+    
+        // 如果有上传的文件，则创建专辑
+        if !uploaded_files.is_empty() {
+            let album_title = gallery.title_jp(); // 优先使用日文标题
+            let album_desc = self.config.telegraph.author_name.clone(); // 描述为作者名
+    
+            match catbox
+                .create_album(
+                    &album_title,
+                    &album_desc,
+                    &uploaded_files.iter().map(String::as_str).collect::<Vec<_>>(),
+                )
+                .await
+            {
+                Ok(album_id) => {
+                    info!("专辑创建成功，专辑 ID: {}", album_id);
+                    // 调用 create_message_text 方法时，将 album_url 传入
+                    let album_url = format!("https://catbox.moe/c/+{}", album_id);
+                    let text = self.create_message_text(&gallery, &album_url).await?;
+                    // 此处可以将 text 用于发送消息或其他操作
+                }
+                Err(err) => {
+                    eprintln!("专辑创建失败: {}", err);
+                }
+            }
+        }
+    
+        Ok(())
     }
+
 
     // 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
     async fn publish_telegraph_article<T: GalleryInfo>(
@@ -209,45 +288,46 @@ impl ExloliUploader {
         html.push_str(&format!("<p>ᴘᴀɢᴇꜱ : {}</p>", gallery.pages()));
 
         let node = html_to_node(&html);
+        // 文章标题优先使用日文
         let title = gallery.title_jp();
         Ok(self.telegraph.create_page(&title, &node, false).await?)
     }
 
     /// 为画廊生成一条可供发送的 telegram 消息正文
     async fn create_message_text<T: GalleryInfo>(
-        &self,
-        gallery: &T,
-        article: &str,
-        album_url: Option<&str>,
-    ) -> Result<String> {
-        let re = Regex::new("[-/· ]").unwrap();
-        let tags = self.trans.trans_tags(gallery.tags());
-        let mut text = String::new();
-        text.push_str(&format!("<b>{}</b>\n\n", gallery.title_jp()));
-        for (ns, tag) in tags {
-            let tag = tag
-                .iter()
-                .map(|s| format!("#{}", re.replace_all(s, "_")))
-                .collect::<Vec<_>>()
-                .join(" ");
-            text.push_str(&format!("⁣⁣⁣⁣　<code>{}</code>: <i>{}</i>\n", ns, tag))
-        }
-        text.push_str(&format!(
-            "\n<b>〔 <a href=\"{}\">即 時 預 覽</a> 〕</b>/",
-            article
-        ));
-        text.push_str(&format!(
-            "<b>〔 <a href=\"{}\">来 源</a> 〕</b>",
-            gallery.url().url()
-        ));
-        if let Some(url) = album_url {
-            text.push_str(&format!(
-                "\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>", 
-                url
-            ));
-        }
-        Ok(text)
+    &self,
+    gallery: &T,
+    article: &str,
+    album_url: &str, // 新增参数 album_url
+) -> Result<String> {
+    // 首先，将 tag 翻译
+    let re = Regex::new("[-/· ]").unwrap();
+    let tags = self.trans.trans_tags(gallery.tags());
+    let mut text = String::new();
+    text.push_str(&format!("<b>{}</b>\n\n", gallery.title_jp()));
+    for (ns, tag) in tags {
+        let tag = tag
+            .iter()
+            .map(|s| format!("#{}", re.replace_all(s, "_")))
+            .collect::<Vec<_>>()
+            .join(" ");
+        text.push_str(&format!("⁣⁣⁣⁣　<code>{}</code>: <i>{}</i>\n", ns, tag))
     }
+    text.push_str(&format!(
+        "\n<b>〔 <a href=\"{}\">即 时 預 覽</a> 〕</b>/",
+        article
+    ));
+    text.push_str(&format!(
+        "<b>〔 <a href=\"{}\">来 源</a> 〕</b>",
+        gallery.url().url()
+    ));
+    // 在此处添加 CATBOX 链接
+    text.push_str(&format!(
+        "\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>",
+        album_url // 使用 album_url 参数
+    ));
+
+    Ok(text)
 }
 
 async fn flatten<T>(handle: JoinHandle<Result<T>>) -> Result<T> {
