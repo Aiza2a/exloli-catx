@@ -253,6 +253,7 @@ impl ExloliUploader {
             {
                 Ok(album_id) => {
                     info!("专辑创建成功，专辑 ID: {}", album_id);
+                    GalleryEntity::update_album_id(gallery.id(), album_id).await?;
                 }
                 Err(err) => {
                     eprintln!("专辑创建失败: {}", err);
@@ -313,6 +314,9 @@ impl ExloliUploader {
             "<b>〔 <a href=\"{}\">来 源</a> 〕</b>",
             gallery.url().url()
         ));
+        if let Some(album_id) = &gallery.album_id {
+            text.push_str(&format!("\n<b>专辑 ID: {}</b>", album_id));
+        }
         Ok(text)
     }
 }
