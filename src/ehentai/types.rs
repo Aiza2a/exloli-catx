@@ -6,7 +6,8 @@ use indexmap::IndexMap;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-use super::error::EhError;  // Assuming this is your custom error type
+use super::error::EhError;
+use crate::database::GalleryEntity;
 
 // 画廊地址，格式为 https://exhentai.org/g/2549143/16b1b7bab0/
 #[derive(Debug, Clone, PartialEq)]
@@ -47,9 +48,11 @@ impl FromStr for EhGalleryUrl {
                 .unwrap()
         });
         let captures = RE.captures(s).ok_or_else(|| EhError::InvalidURL(s.to_owned()))?;
+        // NOTE: 由于是正则匹配出来的结果，此处 unwrap 不会造成 panic
         let token = captures.name("token").unwrap().as_str().to_owned();
         let id = captures.name("id").and_then(|s| s.as_str().parse().ok()).unwrap();
-        let cover = captures.name("cover").and_then(|s| s.as_str()[1..].parse().ok()).unwrap_or_default();
+        let cover =
+            captures.name("cover").and_then(|s| s.as_str()[1..].parse().ok()).unwrap_or_default();
 
         Ok(Self { id, token, cover })
     }
@@ -117,6 +120,7 @@ impl FromStr for EhPageUrl {
         });
 
         let captures = RE.captures(s).ok_or_else(|| EhError::InvalidURL(s.to_owned()))?;
+        // NOTE: 由于是正则匹配出来的结果，此处 unwrap 不会造成 panic
         let hash = captures.name("hash").unwrap().as_str().to_owned();
         let gallery_id = captures.name("id").and_then(|s| s.as_str().parse().ok()).unwrap();
         let page = captures.name("page").and_then(|s| s.as_str().parse().ok()).unwrap();
@@ -133,26 +137,38 @@ impl Display for EhPageUrl {
 
 #[derive(Debug, Clone)]
 pub struct EhGallery {
+    /// URL
     pub url: EhGalleryUrl,
+    /// 画廊标题
     pub title: String,
+    /// 画廊日文标题
     pub title_jp: Option<String>,
+    /// 画廊标签
     pub tags: IndexMap<String, Vec<String>>,
+    /// 收藏数量
     pub favorite: i32,
+    /// 父画廊地址
     pub parent: Option<EhGalleryUrl>,
+    /// 画廊页面
     pub pages: Vec<EhPageUrl>,
+    /// 发布时间
     pub posted: NaiveDateTime,
+    /// 封面是第几张
     pub cover: usize,
-    pub album_id: Option<String>, // 新增字段
 }
 
 pub trait GalleryInfo {
     fn url(&self) -> EhGalleryUrl;
+
     fn title(&self) -> String;
+
     fn title_jp(&self) -> String;
+
     fn tags(&self) -> &IndexMap<String, Vec<String>>;
+
     fn pages(&self) -> usize;
+
     fn cover(&self) -> usize;
-    fn album_id(&self) -> Option<String>;  // 新增方法
 }
 
 impl GalleryInfo for EhGallery {
@@ -178,10 +194,6 @@ impl GalleryInfo for EhGallery {
 
     fn cover(&self) -> usize {
         self.cover
-    }
-
-    fn album_id(&self) -> Option<String> {   // 获取 album_id
-        self.album_id.clone()
     }
 }
 
@@ -209,10 +221,6 @@ impl GalleryInfo for GalleryEntity {
     fn cover(&self) -> usize {
         0
     }
-
-    fn album_id(&self) -> Option<String> {  // 获取 album_id
-        self.album_id.clone()
-    }
 }
 
 #[cfg(test)]
@@ -236,23 +244,5 @@ mod tests {
         assert_eq!(url.gallery_id, 1932743);
         assert_eq!(url.page, 1);
         assert_eq!(url.url(), s);
-    }
-
-    #[test]
-    fn test_album_id() {
-        let gallery = EhGallery {
-            url: "https://exhentai.org/g/12345/abcde".parse().unwrap(),
-            title: "Test Gallery".to_string(),
-            title_jp: Some("テストギャラリー".to_string()),
-            tags: IndexMap::new(),
-            favorite: 100,
-            parent: None,
-            pages: vec![],
-            posted: Utc::now().naive_utc(),
-            cover: 0,
-            album_id: Some("album123".to_string()),  // 设置 album_id
-        };
-
-        assert_eq!(gallery.album_id(), Some("album123".to_string()));
     }
 }
