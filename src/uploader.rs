@@ -273,61 +273,62 @@ impl ExloliUploader {
 
     // 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
     async fn publish_telegraph_article<T: GalleryInfo>(
+            &self,
+            gallery: &T,
+        ) -> Result<telegraph_rs::Page> {
+            let images = ImageEntity::get_by_gallery_id(gallery.url().id()).await?;
+    
+            let mut html = String::new();
+            if gallery.cover() != 0 && gallery.cover() < images.len() {
+                html.push_str(&format!(r#"<img src="{}">"#, images[gallery.cover()].url()))
+            }
+            for img in images {
+                html.push_str(&format!(r#"<img src="{}">"#, img.url()));
+            }
+            html.push_str(&format!("<p>ᴘᴀɢᴇꜱ : {}</p>", gallery.pages()));
+    
+            let node = html_to_node(&html);
+            // 文章标题优先使用日文
+            let title = gallery.title_jp();
+            Ok(self.telegraph.create_page(&title, &node, false).await?)
+        }
+    
+        /// 为画廊生成一条可供发送的 telegram 消息正文
+        async fn create_message_text<T: GalleryInfo>(
         &self,
         gallery: &T,
-    ) -> Result<telegraph_rs::Page> {
-        let images = ImageEntity::get_by_gallery_id(gallery.url().id()).await?;
-
-        let mut html = String::new();
-        if gallery.cover() != 0 && gallery.cover() < images.len() {
-            html.push_str(&format!(r#"<img src="{}">"#, images[gallery.cover()].url()))
+        article: &str,
+        album_url: &str, // 新增参数 album_url
+    ) -> Result<String> {
+        // 首先，将 tag 翻译
+        let re = Regex::new("[-/· ]").unwrap();
+        let tags = self.trans.trans_tags(gallery.tags());
+        let mut text = String::new();
+        text.push_str(&format!("<b>{}</b>\n\n", gallery.title_jp()));
+        for (ns, tag) in tags {
+            let tag = tag
+                .iter()
+                .map(|s| format!("#{}", re.replace_all(s, "_")))
+                .collect::<Vec<_>>()
+                .join(" ");
+            text.push_str(&format!("⁣⁣⁣⁣　<code>{}</code>: <i>{}</i>\n", ns, tag))
         }
-        for img in images {
-            html.push_str(&format!(r#"<img src="{}">"#, img.url()));
-        }
-        html.push_str(&format!("<p>ᴘᴀɢᴇꜱ : {}</p>", gallery.pages()));
-
-        let node = html_to_node(&html);
-        // 文章标题优先使用日文
-        let title = gallery.title_jp();
-        Ok(self.telegraph.create_page(&title, &node, false).await?)
+        text.push_str(&format!(
+            "\n<b>〔 <a href=\"{}\">即 时 預 覽</a> 〕</b>/",
+            article
+        ));
+        text.push_str(&format!(
+            "<b>〔 <a href=\"{}\">来 源</a> 〕</b>",
+            gallery.url().url()
+        ));
+        // 在此处添加 CATBOX 链接
+        text.push_str(&format!(
+            "\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>",
+            album_url // 使用 album_url 参数
+        ));
+    
+        Ok(text)
     }
-
-    /// 为画廊生成一条可供发送的 telegram 消息正文
-    async fn create_message_text<T: GalleryInfo>(
-    &self,
-    gallery: &T,
-    article: &str,
-    album_url: &str, // 新增参数 album_url
-) -> Result<String> {
-    // 首先，将 tag 翻译
-    let re = Regex::new("[-/· ]").unwrap();
-    let tags = self.trans.trans_tags(gallery.tags());
-    let mut text = String::new();
-    text.push_str(&format!("<b>{}</b>\n\n", gallery.title_jp()));
-    for (ns, tag) in tags {
-        let tag = tag
-            .iter()
-            .map(|s| format!("#{}", re.replace_all(s, "_")))
-            .collect::<Vec<_>>()
-            .join(" ");
-        text.push_str(&format!("⁣⁣⁣⁣　<code>{}</code>: <i>{}</i>\n", ns, tag))
-    }
-    text.push_str(&format!(
-        "\n<b>〔 <a href=\"{}\">即 时 預 覽</a> 〕</b>/",
-        article
-    ));
-    text.push_str(&format!(
-        "<b>〔 <a href=\"{}\">来 源</a> 〕</b>",
-        gallery.url().url()
-    ));
-    // 在此处添加 CATBOX 链接
-    text.push_str(&format!(
-        "\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>",
-        album_url // 使用 album_url 参数
-    ));
-
-    Ok(text)
 }
 
 async fn flatten<T>(handle: JoinHandle<Result<T>>) -> Result<T> {
