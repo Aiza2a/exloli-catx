@@ -97,7 +97,11 @@ impl ExloliUploader {
         let text = self.create_message_text(&gallery, &article.url).await?;
         // FIXME: 此处没有考虑到父画廊没有上传，但是父父画廊上传过的情况
         // 不过一般情况下画廊应该不会那么短时间内更新多次
-        GalleryEntity::update_album_id(gallery.url().id(), album_id).await?;
+        if let Some(album_id) = &gallery.album_id() {
+            GalleryEntity::update_album_id(gallery.url().id(), album_id.clone()).await?;
+        } else {
+            info!("No album_id found for gallery: {}", gallery.url());
+        }
         let msg = if let Some(parent) = &gallery.parent {
             if let Some(pmsg) = MessageEntity::get_by_gallery(parent.id()).await? {
                 self.bot
