@@ -93,9 +93,9 @@ impl ExloliUploader {
         // 上传图片、发布文章
         self.upload_gallery_image(&gallery).await?;
         let article = self.publish_telegraph_article(&gallery).await?;
-        let album_link = self.upload_gallery_image(&gallery).await?; // 获取专辑链接
+        let album_id = self.upload_gallery_image(&gallery).await?; // 获取专辑链接
         // 发送消息
-        let text = self.create_message_text(&gallery, &article.url).await?;
+        let text = self.create_message_text(&gallery, &article.url, album_id).await?;
         // FIXME: 此处没有考虑到父画廊没有上传，但是父父画廊上传过的情况
         // 不过一般情况下画廊应该不会那么短时间内更新多次
         let msg = if let Some(parent) = &gallery.parent {
@@ -242,7 +242,6 @@ impl ExloliUploader {
                 }
             }
         }
-        let mut album_link = None;
         // 如果有上传的文件，则创建专辑
         if !uploaded_files.is_empty() {
             let album_title = gallery.title_jp(); // 优先使用日文标题
@@ -258,6 +257,7 @@ impl ExloliUploader {
             {
                 Ok(album_id) => {
                     info!("专辑创建成功，专辑 : {}", album_id);
+                    Ok(album_id)
                 }
                 Err(err) => {
                     eprintln!("专辑创建失败: {}", err);
@@ -265,7 +265,7 @@ impl ExloliUploader {
             }
         }
 
-        Ok(album_link)
+        Ok(())
     }
 
 
@@ -296,7 +296,7 @@ impl ExloliUploader {
         &self,
         gallery: &T,
         article: &str,
-        album_link: Option<String>, // 新增参数 album_link
+        album_id: Option<String>, // 新增参数 album_link
     ) -> Result<String> {
         // 首先，将 tag 翻译
         let re = Regex::new("[-/· ]").unwrap();
@@ -311,7 +311,7 @@ impl ExloliUploader {
                 .join(" ");
             text.push_str(&format!("⁣⁣⁣⁣　<code>{}</code>: <i>{}</i>\n", ns, tag))
         }
-        if let Some(link) = album_link {
+        if let Some(link) = album_id {
             text.push_str(&format!(
                 "\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>/",
                 link
