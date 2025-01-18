@@ -95,7 +95,7 @@ impl ExloliUploader {
         let article = self.publish_telegraph_article(&gallery).await?;
         let album_id = self.upload_gallery_image(&gallery).await?; // 获取专辑链接
         // 发送消息
-        let text = self.create_message_text(&gallery, &article.url, album_id).await?;
+        let text = self.create_message_text(&gallery, &article.url, &album_id).await?;
         // FIXME: 此处没有考虑到父画廊没有上传，但是父父画廊上传过的情况
         // 不过一般情况下画廊应该不会那么短时间内更新多次
         let msg = if let Some(parent) = &gallery.parent {
@@ -147,10 +147,10 @@ impl ExloliUploader {
 
         // 检查 tag 和标题是否有变化
         let gallery = self.ehentai.get_gallery(gallery).await?;
-
+        let album_id = self.upload_gallery_image(&gallery).await?; // 获取专辑链接
         if gallery.tags != entity.tags.0 || gallery.title != entity.title {
             let telegraph = TelegraphEntity::get(gallery.url.id()).await?.unwrap();
-            let text = self.create_message_text(&gallery, &telegraph.url).await?;
+            let text = self.create_message_text(&gallery, &telegraph.url, &album_id).await?;
             self.bot
                 .edit_message_text(
                     self.config.telegram.channel_id.clone(),
@@ -169,7 +169,8 @@ impl ExloliUploader {
     pub async fn republish(&self, gallery: &GalleryEntity, msg: &MessageEntity) -> Result<()> {
         info!("重新发布：{}", msg.id);
         let article = self.publish_telegraph_article(gallery).await?;
-        let text = self.create_message_text(gallery, &article.url).await?;
+        let album_id = self.upload_gallery_image(&gallery).await?; // 获取专辑链接
+        let text = self.create_message_text(gallery, &article.url, &album_id).await?;
         self.bot
             .edit_message_text(self.config.telegram.channel_id.clone(), MessageId(msg.id), text)
             .await?;
@@ -257,7 +258,7 @@ impl ExloliUploader {
             {
                 Ok(album_id) => {
                     info!("专辑创建成功，专辑 : {}", album_id);
-                    Ok(album_id)
+                    Ok(Some(album_id));
                 }
                 Err(err) => {
                     eprintln!("专辑创建失败: {}", err);
@@ -296,7 +297,7 @@ impl ExloliUploader {
         &self,
         gallery: &T,
         article: &str,
-        album_id: Option<String>, // 新增参数 album_link
+        album_id: &str,
     ) -> Result<String> {
         // 首先，将 tag 翻译
         let re = Regex::new("[-/· ]").unwrap();
@@ -311,19 +312,17 @@ impl ExloliUploader {
                 .join(" ");
             text.push_str(&format!("⁣⁣⁣⁣　<code>{}</code>: <i>{}</i>\n", ns, tag))
         }
-        if let Some(link) = album_id {
-            text.push_str(&format!(
-                "\n<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>/",
-                link
-            ));
-        }
         text.push_str(&format!(
             "\n<b>〔 <a href=\"{}\">即 時 預 覽</a> 〕</b>/",
             article
         ));
         text.push_str(&format!(
-            "<b>〔 <a href=\"{}\">来 源</a> 〕</b>",
+            "<b>〔 <a href=\"{}\">来 源</a> 〕</b>/",
             gallery.url().url()
+        ));
+        text.push_str(&format!(
+            "<b>〔 <a href=\"{}\">CATBOX</a> 〕</b>",
+            album_id
         ));
         Ok(text)
     }
