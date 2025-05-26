@@ -12,11 +12,11 @@ where
 {
     dptree::filter_async(|message: Message, bot: Bot, cfg: Config| async move {
         bot.get_chat_member(cfg.telegram.group_id, message.from().unwrap().id)
-            。await
-            。map(|member| {
+            .await
+            .map(|member| {
                 matches!(member.kind, ChatMemberKind::Administrator(_) | ChatMemberKind::Owner(_))
             })
-            。unwrap_or_default()
+            .unwrap_or_default()
     })
 }
 
