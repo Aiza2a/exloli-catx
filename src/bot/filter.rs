@@ -12,11 +12,11 @@ where
 {
     dptree::filter_async(|message: Message, bot: Bot, cfg: Config| async move {
         bot.get_chat_member(cfg.telegram.group_id, message.from().unwrap().id)
-            .await
-            .map(|member| {
+            。await
+            。map(|member| {
                 matches!(member.kind, ChatMemberKind::Administrator(_) | ChatMemberKind::Owner(_))
             })
-            .unwrap_or_default()
+            。unwrap_or_default()
     })
 }
 
@@ -26,7 +26,7 @@ where
 {
     dptree::filter(|message: Message, cfg: Config| {
         message.from().map(|u| u.id.0 == 777000).unwrap_or_default()
-            && message.text().map(|s| s.contains("原始地址")).unwrap_or_default()
+            && message.text().map(|s| s.contains("来 源")).unwrap_or_default()
             && cfg.telegram.group_id == message.chat.id
     })
 }
