@@ -86,7 +86,11 @@ struct RateLimiterInner {
 impl RateLimiter {
     pub fn new(interval: std::time::Duration, limit: usize) -> Self {
         assert_ne!(limit, 0);
-        Self(Arc::new(RateLimiterInner { interval, limit, data: Default::default() }))
+        Self(Arc::new(RateLimiterInner {
+            interval,
+            limit,
+            data: Default::default(),
+        }))
     }
 
     /// 插入数据，正常情况下返回 None，如果达到了限制则返回需要等待的时间
@@ -142,7 +146,10 @@ impl ChallengeProvider {
             loop {
                 match Self::_get_challenge().await {
                     Ok(challenge) => {
-                        tx.send(challenge).await.unwrap();
+                        if tx.send(challenge).await.is_err() {
+                            warn!("ChallengeProvider channel closed");
+                            break;
+                        }
                     }
                     Err(e) => {
                         warn!("获取挑战失败: {}", e);
@@ -166,7 +173,7 @@ impl ChallengeProvider {
             } else {
                 format!("https://telegra.ph{}", answer.url)
             };
-            
+
             // 使用新的客户端和请求头替换旧代码
             let resp = HTTP_CLIENT
                 .get(&url)
