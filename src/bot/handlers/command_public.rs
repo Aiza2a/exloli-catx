@@ -72,7 +72,14 @@ async fn cmd_challenge(
     let mut challenge = challange_provider.get_challenge().await.unwrap();
     let answer = challenge[0].clone();
     challenge.shuffle(&mut thread_rng());
-    let url = format!("https://telegra.ph{}", answer.url);
+    
+    // 修复：正确处理完整的 URL 和相对路径
+    let url = if answer.url.starts_with("https://") {
+        answer.url.clone()
+    } else {
+        format!("https://telegra.ph{}", answer.url)
+    };
+    
     let id = locker.add_challenge(answer.id, answer.page, answer.artist.clone());
     let keyboard = cmd_challenge_keyboard(id, &challenge, &trans);
     let reply = bot
